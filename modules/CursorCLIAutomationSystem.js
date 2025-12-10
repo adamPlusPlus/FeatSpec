@@ -1,0 +1,318 @@
+// Cursor CLI Automation System - Executes pipeline steps sequentially via cursor-cli
+class CursorCLIAutomationSystem {
+    constructor(eventSystem, stateManager, renderingEngine) {
+        this.eventSystem = eventSystem;
+        this.stateManager = stateManager;
+        this.renderingEngine = renderingEngine;
+        this.isRunning = false;
+        this.currentProjectId = null;
+        this.shouldStop = false;
+        this.progressModal = null;
+        this.progressText = null;
+        this.progressLog = null;
+        
+        this.setupEventListeners();
+    }
+    
+    setupEventListeners() {
+        // Listen for automation stop events
+        // Note: Start is handled directly by app.js based on mode
+        this.eventSystem.register(EventType.AUTOMATION_STOP, () => {
+            this.stop();
+        });
+    }
+    
+    // Start automation for a project - executes all incomplete sections sequentially
+    async start(projectId, scopeDirectory = null) {
+        if (this.isRunning) {
+            console.warn('Cursor CLI automation already running');
+            return;
+        }
+        
+        const project = this.stateManager.getProject(projectId);
+        if (!project) {
+            console.error('Project not found:', projectId);
+            return;
+        }
+        
+        // Use provided scopeDirectory or get from project (per-project, not global)
+        const scopeDir = scopeDirectory || project.scopeDirectory || this.stateManager.getScopeDirectory();
+        if (!scopeDir || !scopeDir.trim()) {
+            alert('Please set the scope directory in the Pipeline Flow view for cursor-cli mode');
+            return;
+        }
+        
+        // Validate dependencies before starting
+        const validationResult = this.validateDependencies(project);
+        if (!validationResult.valid) {
+            alert(`Cannot start automation: ${validationResult.message}\n\nMissing dependencies:\n${validationResult.missingDeps.join('\n')}`);
+            return;
+        }
+        
+        // Get all sections, filter out completed and skipped
+        const sections = project.sections.filter(s => 
+            s.status !== 'complete' && s.status !== 'skipped'
+        );
+        
+        if (sections.length === 0) {
+            alert('No incomplete sections to execute');
+            return;
+        }
+        
+        this.currentProjectId = projectId;
+        this.isRunning = true;
+        this.shouldStop = false;
+        
+        // Show progress modal
+        this.showProgressModal();
+        this.updateProgress(`Starting execution of ${sections.length} step(s)...`, '');
+        
+        try {
+            // Execute sections sequentially
+            for (let i = 0; i < sections.length; i++) {
+                if (this.shouldStop) {
+                    this.updateProgress('Execution cancelled by user', '');
+                    break;
+                }
+                
+                const section = sections[i];
+                this.updateProgress(
+                    `Executing step ${i + 1} of ${sections.length}: ${section.sectionName || section.sectionId}`,
+                    `Starting ${section.sectionName || section.sectionId}...`
+                );
+                
+                try {
+                    await this.executeSection(projectId, section);
+                    this.appendToLog(`✓ Completed ${section.sectionName || section.sectionId}`);
+                } catch (error) {
+                    this.appendToLog(`✗ Error in ${section.sectionName || section.sectionId}: ${error.message}`);
+                    this.updateProgress(`Error: ${error.message}`, '');
+                    // Stop execution on error
+                    alert(`Error executing ${section.sectionName || section.sectionId}: ${error.message}\n\nExecution stopped.`);
+                    break;
+                }
+            }
+            
+            if (!this.shouldStop) {
+                this.updateProgress('All steps completed successfully!', '');
+                this.appendToLog('All steps completed');
+                // Auto-close after 2 seconds
+                setTimeout(() => {
+                    this.hideProgressModal();
+                }, 2000);
+            }
+        } catch (error) {
+            console.error('Error in cursor-cli automation:', error);
+            this.updateProgress(`Fatal error: ${error.message}`, '');
+            alert(`Fatal error: ${error.message}`);
+        } finally {
+            this.isRunning = false;
+            this.currentProjectId = null;
+        }
+    }
+    
+    // Execute a single section via cursor-cli
+    async executeSection(projectId, section) {
+        const project = this.stateManager.getProject(projectId);
+        if (!project) {
+            throw new Error('Project not found');
+        }
+        
+        // Get input (user input or previous output)
+        const input = await this.getSectionInput(projectId, section);
+        
+        // Get full prompt with all substitutions
+        const prompt = await this.getFullPrompt(projectId, section);
+        
+        // Combine prompt + input
+        const fullPrompt = `${prompt}\n\n## Input\n\n${input}`;
+        
+        // Get scope directory from project (per-project, not global)
+        const scopeDir = project.scopeDirectory || this.stateManager.getScopeDirectory();
+        if (!scopeDir) {
+            throw new Error('Scope directory not set for this project');
+        }
+        
+        // Execute cursor-cli
+        const output = await this.executeCursorCLI(fullPrompt, scopeDir);
+        
+        // Save output to section state
+        this.stateManager.updateSection(projectId, section.sectionId, {
+            output: output,
+            status: 'complete'
+        });
+        
+        // Save output to file for persistence
+        await this.saveOutputToFile(projectId, section, output);
+        
+        // Update UI
+        this.renderingEngine.renderAll();
+    }
+    
+    // Get section input (user input if exists, else from dependencies)
+    async getSectionInput(projectId, section) {
+        // If section has user input, use that
+        if (section.input && section.input.trim()) {
+            return section.input;
+        }
+        
+        // Otherwise, get input from dependencies
+        const project = this.stateManager.getProject(projectId);
+        if (!project) return '';
+        
+        // If section has dependencies, use outputs from dependency sections
+        if (section.dependencies && section.dependencies.length > 0) {
+            const dependencyOutputs = [];
+            for (const depId of section.dependencies) {
+                const depSection = project.sections.find(s => s.sectionId === depId);
+                if (depSection && depSection.output) {
+                    dependencyOutputs.push(depSection.output);
+                }
+            }
+            // Combine all dependency outputs, or use the first one if multiple
+            return dependencyOutputs.join('\n\n---\n\n') || '';
+        }
+        
+        // Fallback: use previous section by position (for backward compatibility)
+        const currentIndex = project.sections.findIndex(s => s.sectionId === section.sectionId);
+        if (currentIndex > 0) {
+            const previousSection = project.sections[currentIndex - 1];
+            return previousSection.output || '';
+        }
+        
+        return '';
+    }
+    
+    // Get full prompt with all variable substitutions
+    async getFullPrompt(projectId, section) {
+        const project = this.stateManager.getProject(projectId);
+        const promptLoader = window.PromptLoader;
+        
+        if (!promptLoader) {
+            throw new Error('PromptLoader not available');
+        }
+        
+        // Get prompt with variable substitution (including input)
+        const prompt = await promptLoader.getPrompt(
+            section.sectionId,
+            section,
+            project,
+            { substituteInput: true } // Include input in prompt
+        );
+        
+        return prompt;
+    }
+    
+    // Execute cursor-cli via server endpoint
+    async executeCursorCLI(prompt, scopeDirectory) {
+        const response = await fetch('/api/cursor-cli-execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                prompt: prompt,
+                scopeDirectory: scopeDirectory
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Server error: ${response.status} ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.error || 'Cursor CLI execution failed');
+        }
+        
+        return result.output;
+    }
+    
+    // Save output to file for persistence
+    async saveOutputToFile(projectId, section, output) {
+        const project = this.stateManager.getProject(projectId);
+        const automationDir = project.automationDirectory;
+        
+        if (!automationDir) {
+            console.warn('No automation directory set, skipping file save');
+            return;
+        }
+        
+        // Determine file name from section
+        const stepName = section.stepName || section.sectionId;
+        const fileName = `${stepName}-output.md`;
+        const filePath = `${automationDir}/${fileName}`;
+        
+        try {
+            const response = await fetch('http://localhost:8050/api/save-automation-file', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filePath: filePath,
+                    content: output
+                })
+            });
+            
+            const result = await response.json();
+            if (!result.success) {
+                console.warn(`Failed to save output file: ${result.error}`);
+            }
+        } catch (error) {
+            console.error('Error saving output file:', error);
+        }
+    }
+    
+    // Stop execution
+    stop() {
+        if (this.isRunning) {
+            this.shouldStop = true;
+            this.isRunning = false;
+            this.updateProgress('Stopping execution...', '');
+        }
+    }
+    
+    // Show progress modal
+    showProgressModal() {
+        const modal = document.getElementById('cursor-cli-progress-modal');
+        if (modal) {
+            modal.style.display = 'flex';
+            this.progressModal = modal;
+            this.progressText = document.getElementById('cursor-cli-progress-text');
+            this.progressLog = document.getElementById('cursor-cli-progress-log');
+            
+            // Clear log
+            if (this.progressLog) {
+                this.progressLog.innerHTML = '';
+            }
+        }
+    }
+    
+    // Hide progress modal
+    hideProgressModal() {
+        const modal = document.getElementById('cursor-cli-progress-modal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+    
+    // Update progress text
+    updateProgress(text, logEntry) {
+        if (this.progressText) {
+            this.progressText.textContent = text;
+        }
+        if (logEntry) {
+            this.appendToLog(logEntry);
+        }
+    }
+    
+    // Append to progress log
+    appendToLog(message) {
+        if (this.progressLog) {
+            const entry = document.createElement('div');
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            entry.style.marginBottom = '4px';
+            this.progressLog.appendChild(entry);
+            // Auto-scroll to bottom
+            this.progressLog.scrollTop = this.progressLog.scrollHeight;
+        }
+    }
+}
+

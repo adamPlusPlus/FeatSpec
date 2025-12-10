@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Feature Specification Prompt Creator</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤔</text></svg>">
+    <link rel="stylesheet" href="app.css">
+</head>
+<body>
+    <div id="app">
+        <header id="top-bar">
+            <div class="controls">
+                <div class="project-group-container" style="display: flex; align-items: center; gap: 8px; margin-right: 12px;">
+                    <label for="project-group-select" style="color: #888; font-size: 0.9em; white-space: nowrap;">Project Group:</label>
+                    <label for="project-group-name" style="display: contents;">
+                        <input type="text" id="project-group-name" name="project-group-name" placeholder="Enter project group name..." style="display: none; padding: 6px 10px; background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; color: #e0e0e0; font-size: 0.9em; min-width: 200px; max-width: 300px;" title="Project group name for saving/loading all projects">
+                    </label>
+                    <select id="project-group-select" name="project-group-select" style="padding: 6px 10px; background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; color: #e0e0e0; font-size: 0.9em; min-width: 150px; max-width: 200px; cursor: pointer;" title="Load existing project group">
+                        <option value="">Load Project Group...</option>
+                    </select>
+                </div>
+                <div class="dropdown">
+                    <button class="dropdown-toggle">
+                        <span>File</span>
+                        <span class="dropdown-arrow">▼</span>
+                    </button>
+                    <div class="dropdown-menu">
+                        <button id="new-project">➕ New Project</button>
+                        <button id="new-project-group">🆕 New Project Group</button>
+                        <button id="export-project">💾 Export Project</button>
+                        <button id="import-project">📁 Import Project</button>
+                        <button id="export-final-spec">📄 Export Final Spec</button>
+                        <hr style="margin: 5px 0; border: none; border-top: 1px solid #444;">
+                        <button id="save-file">💾 Save to File</button>
+                        <button id="load-file">📁 Load from File</button>
+                    </div>
+                </div>
+                <label for="file-input" style="display: none;">
+                    <input type="file" id="file-input" name="file-input" accept=".json" style="display: none;">
+                </label>
+                <button id="automation-btn" class="automation-btn" title="Automation">▶️</button>
+                <button id="automation-refresh-btn" class="automation-refresh-btn" title="Refresh Automation Check">🔄</button>
+                <button id="chat-btn" class="chat-btn" title="Chat">💬</button>
+                <button id="references-btn" class="references-btn" title="Reference Documents">📚</button>
+                <button id="toggle-top-bar" class="btn-icon pane-toggle-btn" style="font-size: 12px;" title="Collapse Top Bar">▼</button>
+                <button id="settings-btn" class="settings-btn" title="Settings">⚙️</button>
+            </div>
+        </header>
+        
+        <button id="toggle-top-bar-collapsed" class="pane-toggle-btn-collapsed" style="display: none;" title="Expand Top Bar">▲</button>
+        
+        <div class="main-layout">
+            <!-- Projects Sidebar -->
+            <aside class="projects-sidebar" id="projects-sidebar">
+                <div class="sidebar-header">
+                    <h3>Projects</h3>
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <button id="new-project-btn" class="btn-icon" title="New Project">➕</button>
+                        <button id="toggle-projects-sidebar" class="btn-icon pane-toggle-btn" title="Collapse Sidebar">◀</button>
+                    </div>
+                </div>
+                <div class="projects-list" id="projects-list">
+                    <!-- Projects will be dynamically created here -->
+                </div>
+            </aside>
+            <!-- Collapsed sidebar toggle button -->
+            <button id="toggle-projects-sidebar-collapsed" class="pane-toggle-btn-collapsed" style="display: none;" title="Expand Projects Sidebar">▶</button>
+            
+            <!-- Main Content Area -->
+            <main class="main-content" id="main-content">
+                <div class="view-toggle">
+                    <button id="view-section" class="view-btn active">Section View</button>
+                    <button id="view-pipeline" class="view-btn">Pipeline Flow</button>
+                </div>
+                
+                <!-- Section View -->
+                <div id="section-view" class="content-view">
+                    <div class="section-view-placeholder">
+                        <p>Select a project and section to begin</p>
+                    </div>
+                </div>
+                
+                <!-- Pipeline Flow View -->
+                <div id="pipeline-flow-view" class="content-view" style="display: none;">
+                    <div class="pipeline-flow-placeholder">
+                        <p>Pipeline flow view will appear here</p>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+    
+    <!-- Reference Documents Panel -->
+    <aside class="references-panel" id="references-panel" style="display: none;">
+        <div class="panel-header">
+            <h3>Reference Documents</h3>
+            <div style="display: flex; gap: 4px; align-items: center;">
+                <button id="toggle-references-panel" class="btn-icon pane-toggle-btn" title="Collapse References Panel">▶</button>
+                <button id="references-close" class="close-btn">×</button>
+            </div>
+        </div>
+        <!-- Collapsed references panel toggle button -->
+        <button id="toggle-references-panel-collapsed" class="pane-toggle-btn-collapsed" style="display: none;" title="Expand References Panel">◀</button>
+        <div class="panel-search">
+            <label for="references-search" style="display: none;">Search references</label>
+            <input type="text" id="references-search" name="references-search" placeholder="Search references...">
+        </div>
+        <div class="panel-content" id="references-content">
+            <!-- Reference documents will be loaded here -->
+        </div>
+    </aside>
+    
+    <!-- Context Menu -->
+    <div id="context-menu" class="context-menu">
+        <!-- Pane actions -->
+        <div class="context-menu-item" id="context-toggle-pane">Toggle Pane</div>
+        <!-- Project Group actions -->
+        <div class="context-menu-item" id="context-project-group-new">🆕 New Project Group</div>
+        <div class="context-menu-item" id="context-project-group-edit-name">✏️ Edit Project Group Name</div>
+        <div class="context-menu-item" id="context-project-group-save">💾 Save Project Group</div>
+        <div class="context-menu-item" id="context-project-group-load">📁 Load Project Group</div>
+        <div class="context-menu-item" id="context-edit-project-group">✏️ Edit Project Group</div>
+        <div class="context-menu-item" id="context-delete-project-group">🗑️ Delete Project Group</div>
+        <!-- Project actions -->
+        <div class="context-menu-item" id="context-rename-project">Rename Project</div>
+        <div class="context-menu-item" id="context-duplicate-project">Duplicate Project</div>
+        <div class="context-menu-item" id="context-export-project">Export Project</div>
+        <div class="context-menu-item" id="context-set-active-project">Set as Active</div>
+        <div class="context-menu-item" id="context-delete-project">Delete Project</div>
+        <!-- Section actions -->
+        <div class="context-menu-item" id="context-mark-complete-section">Mark Complete</div>
+        <div class="context-menu-item" id="context-copy-section-output">Copy Output</div>
+        <div class="context-menu-item" id="context-copy-prompt-input">Copy Prompt + Input</div>
+        <div class="context-menu-item" id="context-paste-previous-section">Paste from Previous</div>
+        <div class="context-menu-item" id="context-clear-section-output">Clear Output</div>
+        <div class="context-menu-item" id="context-collapse-all-panels">Collapse All Panels</div>
+        <div class="context-menu-item" id="context-edit-modifiers">Edit Modifiers</div>
+        <div class="context-menu-item" id="context-reset-modifiers">Reset Modifiers</div>
+        <div class="context-menu-item" id="context-insert-step-above">Insert Step Above</div>
+        <div class="context-menu-item" id="context-insert-step-below">Insert Step Below</div>
+        <div class="context-menu-item" id="context-jump-to-section">Jump to Section</div>
+        <div class="context-menu-item" id="context-delete-step">Delete Step</div>
+        <div class="context-menu-item" id="context-invoke-validation-loop">Invoke Validation Loop</div>
+        <div class="context-menu-item" id="context-invoke-refinement-loop">Invoke Refinement Loop</div>
+        <div class="context-menu-item" id="context-invoke-integration-loop">Invoke Integration Loop</div>
+        <div class="context-menu-item" id="context-view-process-step-results">View Process Step Results</div>
+        <div class="context-menu-item" id="context-add-step">Add Step</div>
+        <div class="context-menu-item" id="context-set-default-automation-dir">Set Default Directory</div>
+        <div class="context-menu-item" id="context-open-automation-dir">Open Directory in File Browser</div>
+        <!-- Legacy actions -->
+        <div class="context-menu-item" id="context-edit">Edit</div>
+        <div class="context-menu-item" id="context-view-data">View Data</div>
+        <div class="context-menu-item" id="context-add-element">Add Element</div>
+        <div class="context-menu-item" id="context-delete-element">Delete</div>
+        <div class="context-menu-item" id="context-collapse-page">Collapse Page</div>
+        <div class="context-menu-item" id="context-add-page">Add Page</div>
+        <div class="context-menu-item" id="context-add-element-page">Add Element</div>
+        <div class="context-menu-item" id="context-delete-page">Delete Page</div>
+        <div class="context-menu-item" id="context-toggle-subtasks">Toggle All Subtasks</div>
+        <div class="context-menu-item" id="context-collapse-all-pages">Collapse All Pages</div>
+        <div class="context-menu-item" id="context-reset-day">Reset Today</div>
+    </div>
+    
+    <!-- Modal for editing/viewing -->
+    <div id="modal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <div id="modal-header"></div>
+            <div id="modal-body"></div>
+            <div class="modal-footer">
+                <button id="modal-save" class="btn btn-primary">Save</button>
+                <button id="modal-cancel" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content settings-content">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button id="settings-close" class="close-btn">×</button>
+            </div>
+            <div id="settings-body" class="settings-body"></div>
+            <div class="modal-footer">
+                <button id="settings-reset" class="btn btn-secondary">Reset to Defaults</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Case Selection Modal -->
+    <div id="case-selection-modal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content case-selection-content">
+            <div class="modal-header">
+                <h2>Select Case</h2>
+                <button id="case-selection-close" class="close-btn">×</button>
+            </div>
+            <div id="case-selection-body" class="case-selection-body">
+                <!-- Cases will be loaded dynamically -->
+            </div>
+            <div class="automation-engine-selection" style="padding: 20px; border-top: 1px solid #404040;">
+                <h3 style="margin-top: 0; margin-bottom: 12px;">Automation Engine</h3>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="radio" id="automation-engine-file-watching" name="automation-engine" value="file-watching" checked style="margin-right: 8px;">
+                        <span>File Watching (Traditional)</span>
+                    </label>
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="radio" id="automation-engine-cursor-cli" name="automation-engine" value="cursor-cli" style="margin-right: 8px;">
+                        <span>Cursor CLI (Sequential)</span>
+                    </label>
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="radio" id="automation-engine-multi-agent" name="automation-engine" value="multi-agent" style="margin-right: 8px;">
+                        <span>Multi-Agent (Parallel with Quality Gates)</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="case-selection-cancel" class="btn btn-secondary">Cancel</button>
+                <button id="case-selection-confirm" class="btn btn-primary" disabled>Create Project</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modifier Editor Modal -->
+    <div id="modifier-editor-modal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content modifier-editor-content">
+            <div class="modal-header">
+                <h2>Edit Modifiers</h2>
+                <button id="modifier-editor-close" class="close-btn">×</button>
+            </div>
+            <div id="modifier-editor-body" class="modifier-editor-body">
+                <!-- Modifiers will be loaded dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button id="modifier-editor-cancel" class="btn btn-secondary">Cancel</button>
+                <button id="modifier-editor-save" class="btn btn-primary">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- File Browser Modal -->
+    <div id="file-browser-modal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content file-browser-content">
+            <div class="modal-header">
+                <h2>Load File</h2>
+                <button id="file-browser-close" class="close-btn">×</button>
+            </div>
+            <div id="file-browser-body" class="file-browser-body">
+                <div style="margin-bottom: 20px;">
+                    <h3 style="margin-bottom: 10px; color: #e0e0e0;">Saved Files (Server)</h3>
+                    <div id="saved-files-list" style="max-height: 300px; overflow-y: auto; border: 1px solid #404040; border-radius: 4px; padding: 10px; background: #1e1e1e;">
+                        <p style="color: #888; text-align: center; padding: 20px;">Loading files...</p>
+                    </div>
+                </div>
+                <hr style="margin: 20px 0; border: none; border-top: 1px solid #404040;">
+                <div>
+                    <h3 style="margin-bottom: 10px; color: #e0e0e0;">Upload from Local File</h3>
+                    <label for="file-upload-input" style="display: none;">
+                        <input type="file" id="file-upload-input" name="file-upload-input" accept=".json" style="display: none;">
+                    </label>
+                    <button id="file-upload-btn" class="btn btn-secondary" style="width: 100%;">Choose File to Upload</button>
+                    <p id="file-upload-name" style="margin-top: 10px; color: #888; font-size: 0.9em;"></p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="file-browser-cancel" class="btn btn-secondary">Cancel</button>
+                <button id="file-browser-load" class="btn btn-primary" disabled>Load File</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Previous Step Selection Modal -->
+    <div id="previous-step-modal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content previous-step-content">
+            <div class="modal-header">
+                <h2>Select Previous Step Output</h2>
+                <button id="previous-step-close" class="close-btn">×</button>
+            </div>
+            <div id="previous-step-body" class="previous-step-body">
+                <p style="color: #888; margin-bottom: 15px;">Select a previous step to import its output as input for the current step:</p>
+                <div id="previous-steps-list" style="max-height: 400px; overflow-y: auto; border: 1px solid #404040; border-radius: 4px; padding: 10px; background: #1e1e1e;">
+                    <p style="color: #888; text-align: center; padding: 20px;">Loading previous steps...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="previous-step-cancel" class="btn btn-secondary">Cancel</button>
+                <button id="previous-step-paste" class="btn btn-primary" disabled>Paste Selected</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Process Step Results Panel -->
+    <div id="process-step-results-panel" class="process-step-results-panel" style="display: none;">
+        <div class="panel-header">
+            <h3>Process Step Results</h3>
+            <button id="process-step-results-close" class="close-btn">×</button>
+        </div>
+        <div id="process-step-results-content" class="process-step-results-content">
+            <!-- Results will be loaded dynamically -->
+        </div>
+    </div>
+    
+    <!-- Project Group Edit Modal -->
+    <div id="project-group-edit-modal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content project-group-edit-content">
+            <div class="modal-header">
+                <h2>Edit Project Group</h2>
+                <button id="project-group-edit-close" class="close-btn">×</button>
+            </div>
+            <div id="project-group-edit-body" class="project-group-edit-body">
+                <div style="display: flex; flex-direction: column; gap: 15px;">
+                    <div>
+                        <label for="project-group-edit-name" style="display: block; margin-bottom: 5px; color: #e0e0e0; font-size: 0.9em;">Project Group Name:</label>
+                        <input type="text" id="project-group-edit-name" placeholder="Enter project group name..." style="width: 100%; padding: 8px 12px; background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; color: #e0e0e0; font-size: 0.9em;" />
+                    </div>
+                    <div>
+                        <label for="project-group-edit-description" style="display: block; margin-bottom: 5px; color: #e0e0e0; font-size: 0.9em;">Description (optional):</label>
+                        <textarea id="project-group-edit-description" placeholder="Add a description for this project group..." rows="3" style="width: 100%; padding: 8px 12px; background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; color: #e0e0e0; font-size: 0.9em; resize: vertical; font-family: inherit;"></textarea>
+                    </div>
+                    <div>
+                        <label for="project-group-edit-tags" style="display: block; margin-bottom: 5px; color: #e0e0e0; font-size: 0.9em;">Tags (comma-separated, optional):</label>
+                        <input type="text" id="project-group-edit-tags" placeholder="e.g., feature, bugfix, refactor" style="width: 100%; padding: 8px 12px; background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; color: #e0e0e0; font-size: 0.9em;" />
+                    </div>
+                    <div>
+                        <label for="project-group-edit-default-automation-dir" style="display: block; margin-bottom: 5px; color: #e0e0e0; font-size: 0.9em;">Default Automation Directory (optional):</label>
+                        <input type="text" id="project-group-edit-default-automation-dir" name="project-group-edit-default-automation-dir" placeholder="e.g., H:/_Projects/myproject or ./output" style="width: 100%; padding: 8px 12px; background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; color: #e0e0e0; font-size: 0.9em; font-family: monospace;" />
+                        <p style="margin-top: 5px; font-size: 0.8em; color: #888;">This directory will be used as the default parent directory when creating automation directories for projects in this group.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="project-group-edit-cancel" class="btn btn-secondary">Cancel</button>
+                <button id="project-group-edit-save" class="btn btn-primary">Save Changes</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Automation Modal -->
+    <div id="automation-modal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content automation-content">
+            <div class="modal-header">
+                <h2>Pipeline Automation</h2>
+                <button id="automation-close" class="close-btn">×</button>
+            </div>
+            <div id="automation-body" class="automation-body">
+                <div class="automation-info">
+                    <p>Automation will:</p>
+                    <ul>
+                        <li>Watch the target directory for files specified in each step's prompt</li>
+                        <li>Automatically read file contents when detected</li>
+                        <li>Update section outputs and mark steps as complete</li>
+                        <li>Move to the next step and inject previous output if needed</li>
+                    </ul>
+                    <div class="automation-directory-section" style="margin-top: 20px; padding: 15px; background: #2d2d2d; border-radius: 6px;">
+                        <p><strong>Watched Directory:</strong></p>
+                        <p id="automation-directory-display" style="margin: 10px 0; color: #888; font-family: monospace;">No directory set</p>
+                        <p style="margin-top: 10px; font-size: 0.85em; color: #888;">
+                            Set the directory in the Pipeline Flow view before starting automation.
+                        </p>
+                    </div>
+                    <div class="automation-status" id="automation-status" style="margin-top: 20px;">
+                        <p><strong>Status:</strong> <span id="automation-status-text">Ready</span></p>
+                        <p id="automation-current-step" style="margin-top: 10px; font-size: 0.9em; color: #888;"></p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="automation-stop" class="btn btn-secondary" style="display: none;">⏹️ Stop</button>
+                <button id="automation-start" class="btn btn-primary">▶️ Start Automation</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Cursor CLI Progress Modal -->
+    <div id="cursor-cli-progress-modal" class="modal" style="display: none;">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2>Cursor CLI Automation</h2>
+                <button id="cursor-cli-close" class="close-btn">×</button>
+            </div>
+            <div class="modal-body">
+                <div id="cursor-cli-progress-text" style="margin-bottom: 15px;">
+                    Initializing...
+                </div>
+                <div style="background: #2d2d2d; border-radius: 4px; padding: 10px; font-family: monospace; font-size: 0.9em; max-height: 200px; overflow-y: auto;">
+                    <div id="cursor-cli-progress-log"></div>
+                </div>
+                <button id="cursor-cli-cancel" class="btn btn-secondary" style="margin-top: 15px;">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="multi-agent-progress-modal" class="modal" style="display: none;">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content" style="max-width: 900px; max-height: 90vh;">
+            <div class="modal-header">
+                <h2>Multi-Agent Automation</h2>
+                <button id="multi-agent-close" class="close-btn">×</button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 15px; max-height: calc(90vh - 120px); overflow-y: auto;">
+                <!-- Status Section -->
+                <div id="multi-agent-progress-text" style="font-weight: 500; color: #4CAF50;">
+                    Initializing...
+                </div>
+                
+                <!-- Active Agents Section -->
+                <div class="multi-agent-section">
+                    <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #e0e0e0;">Active Agents</h3>
+                    <div id="multi-agent-active-agents" style="display: flex; flex-wrap: wrap; gap: 8px; min-height: 40px;">
+                        <span style="color: #888; font-size: 0.9em;">No active agents</span>
+                    </div>
+                </div>
+                
+                <!-- Execution Flow Visualization -->
+                <div class="multi-agent-section">
+                    <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #e0e0e0;">Execution Flow</h3>
+                    <div id="multi-agent-execution-flow" style="background: #1a1a1a; border-radius: 4px; padding: 12px; font-size: 0.85em;">
+                        <div style="color: #888;">Waiting for execution...</div>
+                    </div>
+                </div>
+                
+                <!-- Agent Conversations -->
+                <div class="multi-agent-section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h3 style="margin: 0; font-size: 14px; color: #e0e0e0;">Agent Conversations</h3>
+                        <button id="multi-agent-toggle-conversations" class="btn-icon" style="padding: 4px 8px; font-size: 12px;">Show</button>
+                    </div>
+                    <div id="multi-agent-conversations" style="display: none; background: #1a1a1a; border-radius: 4px; padding: 12px; max-height: 200px; overflow-y: auto; font-size: 0.85em;">
+                        <div style="color: #888;">No conversations yet</div>
+                    </div>
+                </div>
+                
+                <!-- RAG/Context Building Steps -->
+                <div class="multi-agent-section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h3 style="margin: 0; font-size: 14px; color: #e0e0e0;">RAG & Context Building</h3>
+                        <button id="multi-agent-toggle-rag" class="btn-icon" style="padding: 4px 8px; font-size: 12px;">Show</button>
+                    </div>
+                    <div id="multi-agent-rag-steps" style="display: none; background: #1a1a1a; border-radius: 4px; padding: 12px; max-height: 200px; overflow-y: auto; font-size: 0.85em;">
+                        <div style="color: #888;">No RAG steps yet</div>
+                    </div>
+                </div>
+                
+                <!-- Progress Log -->
+                <div class="multi-agent-section">
+                    <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #e0e0e0;">Progress Log</h3>
+                    <div style="background: #2d2d2d; border-radius: 4px; padding: 10px; font-family: monospace; font-size: 0.85em; max-height: 200px; overflow-y: auto;">
+                        <div id="multi-agent-progress-log"></div>
+                    </div>
+                </div>
+                
+                <button id="multi-agent-cancel" class="btn btn-secondary" style="margin-top: 10px;">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Input Guidance Modal -->
+    <div id="input-guidance-modal" class="modal" style="display: none;">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2>Input Guidance</h2>
+                <button id="input-guidance-close" class="close-btn">×</button>
+            </div>
+            <div class="modal-body">
+                <div id="input-guidance-content" style="color: #e0e0e0; line-height: 1.6;">
+                    <p>Loading guidance...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="input-guidance-ok" class="btn btn-primary">OK</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <div class="loading-text">Loading project group...</div>
+        </div>
+    </div>
+    
+    <!-- Chat Window -->
+    <div id="chat-window" class="chat-window">
+        <div class="chat-window-header">
+            <h3 class="chat-window-title">Chat</h3>
+            <div class="chat-window-header-actions">
+                <button class="chat-window-clear-history" title="Clear Chat History">🗑️</button>
+                <button class="chat-window-close" title="Close Chat">×</button>
+            </div>
+        </div>
+        <div class="chat-window-content">
+            <div class="chat-tab-bar-container">
+                <div class="chat-tab-bar"></div>
+                <button class="chat-new-tab-button" title="New Chat">+</button>
+            </div>
+            <div class="chat-message-list"></div>
+            <div class="chat-input-container">
+                <textarea class="chat-input-field" placeholder="Type your message... (Enter to send, Shift+Enter for newline)" rows="3"></textarea>
+                <button class="chat-send-button" title="Send Message">Send</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Chat Settings Modal -->
+    <div id="chat-settings-modal" class="modal chat-settings-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Chat Settings</h3>
+                <button class="chat-settings-close close-btn">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="chat-settings-name">Chat Name:</label>
+                    <input type="text" id="chat-settings-name" class="chat-settings-name" placeholder="Enter chat name">
+                </div>
+                <div class="form-group">
+                    <label for="chat-settings-scope">Scope Directory:</label>
+                    <input type="text" id="chat-settings-scope" class="chat-settings-scope" placeholder="Enter scope directory path">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" class="chat-settings-save-history" checked>
+                        Save chat history
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label for="chat-settings-max-height">Max Height (px):</label>
+                    <input type="number" id="chat-settings-max-height" class="chat-settings-max-height" placeholder="e.g., 700" min="300" max="2000" step="50">
+                    <p style="margin-top: 5px; font-size: 0.85em; color: #888;">Maximum height for the chat window in pixels (300-2000). Leave empty for default (90vh).</p>
+                </div>
+                <div class="form-group">
+                    <button class="chat-settings-clear-history" style="padding: 8px 16px; background: #ff5555; border: none; color: #ffffff; border-radius: 4px; cursor: pointer; font-size: 14px;">
+                        Clear Chat History
+                    </button>
+                    <p style="margin-top: 5px; font-size: 0.85em; color: #888;">This will permanently delete all messages in this chat.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="chat-settings-save">Save</button>
+                <button class="chat-settings-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Module scripts in dependency order -->
+    <script src="modules/InputGuidanceData.js"></script>
+    <script src="modules/EventSystem.js"></script>
+    <script src="modules/StateManager.js"></script>
+    <script src="modules/DataLayer.js"></script>
+    <script src="modules/PipelineConfig.js"></script>
+    <script src="modules/PromptLoader.js"></script>
+    <script src="modules/ReferenceDocuments.js"></script>
+    <script src="modules/PointerTracker.js"></script>
+    <script src="modules/DragDropHandler.js"></script>
+    <script src="modules/ContextMenuHandler.js"></script>
+    <script src="modules/ModalSystem.js"></script>
+    <script src="modules/KeyboardHandler.js"></script>
+    <script src="modules/RenderingEngine.js"></script>
+    <script src="modules/AutomationSystem.js"></script>
+    <script src="modules/CursorCLIAutomationSystem.js"></script>
+    <script src="modules/MultiAgentAutomationSystem.js"></script>
+    <!-- Chat System Modules -->
+    <script type="module">
+        // Import chat modules
+        import { ChatSystem } from './modules/ChatSystem.js';
+        import { ChatWindow } from './modules/ui/ChatWindow.js';
+        import { ChatTabBar } from './modules/ui/ChatTabBar.js';
+        import { ChatMessageList } from './modules/ui/ChatMessageList.js';
+        import { ChatInput } from './modules/ui/ChatInput.js';
+        import { ChatSettings } from './modules/ui/ChatSettings.js';
+        
+        // Make them available globally
+        window.ChatSystem = ChatSystem;
+        window.ChatWindow = ChatWindow;
+        window.ChatTabBar = ChatTabBar;
+        window.ChatMessageList = ChatMessageList;
+        window.ChatInput = ChatInput;
+        window.ChatSettings = ChatSettings;
+    </script>
+    <!-- Main application -->
+    <script src="app.js"></script>
+</body>
+</html>
+

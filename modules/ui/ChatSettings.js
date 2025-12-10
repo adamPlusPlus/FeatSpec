@@ -1,0 +1,262 @@
+// ChatSettings - Settings modal UI, form handling, validation
+// Uses EventSystem and PathUtils
+
+import { normalize, validate } from '../utils/PathUtils.js';
+
+/**
+ * ChatSettings - Manages the chat settings modal
+ */
+export class ChatSettings {
+    constructor(eventSystem, containerElement) {
+        this.eventSystem = eventSystem;
+        this.containerElement = containerElement;
+        this.modalElement = null;
+        this.currentChatId = null;
+        this.onSaveCallback = null;
+        this.onCancelCallback = null;
+        
+        this._initialize();
+    }
+    
+    /**
+     * Initializes the settings modal
+     * @private
+     */
+    _initialize() {
+        if (!this.containerElement) {
+            console.warn('ChatSettings: Container element not provided');
+            return;
+        }
+        
+        // Find or create modal element
+        this.modalElement = this.containerElement.querySelector('#chat-settings-modal');
+        
+        if (!this.modalElement) {
+            console.warn('ChatSettings: Settings modal element not found');
+            return;
+        }
+        
+        // Set up close button
+        const closeButton = this.modalElement.querySelector('.chat-settings-close');
+        if (closeButton) {
+            closeButton.addEventListener('click', () => {
+                this.hide();
+            });
+        }
+        
+        // Set up save button
+        const saveButton = this.modalElement.querySelector('.chat-settings-save');
+        if (saveButton) {
+            saveButton.addEventListener('click', () => {
+                this._handleSave();
+            });
+        }
+        
+        // Set up cancel button
+        const cancelButton = this.modalElement.querySelector('.chat-settings-cancel');
+        if (cancelButton) {
+            cancelButton.addEventListener('click', () => {
+                this.hide();
+            });
+        }
+        
+        // Set up clear history button
+        const clearHistoryButton = this.modalElement.querySelector('.chat-settings-clear-history');
+        if (clearHistoryButton) {
+            clearHistoryButton.addEventListener('click', () => {
+                if (confirm('Are you sure you want to clear all chat history? This cannot be undone.')) {
+                    this.eventSystem.emit('chat:history:clear', {
+                        source: 'ChatSettings',
+                        data: { chatId: this.currentChatId }
+                    });
+                }
+            });
+        }
+        
+        // Close on outside click
+        this.modalElement.addEventListener('click', (e) => {
+            if (e.target === this.modalElement) {
+                this.hide();
+            }
+        });
+    }
+    
+    /**
+     * Shows the settings modal
+     * @param {string} chatId - The chat ID
+     * @param {object} chatInstance - The chat instance
+     */
+    show(chatId, chatInstance) {
+        if (!this.modalElement) {
+            return;
+        }
+        
+        this.currentChatId = chatId;
+        this.populate(chatInstance);
+        this.modalElement.style.display = 'flex';
+        
+        // Emit event
+        this.eventSystem.emit('chat:settings:shown', {
+            source: 'ChatSettings',
+            data: { chatId }
+        });
+    }
+    
+    /**
+     * Hides the settings modal
+     */
+    hide() {
+        if (this.modalElement) {
+            this.modalElement.style.display = 'none';
+            this.currentChatId = null;
+            
+            // Emit event
+            this.eventSystem.emit('chat:settings:hidden', {
+                source: 'ChatSettings',
+                data: {}
+            });
+        }
+    }
+    
+    /**
+     * Populates the form with chat instance data
+     * @param {object} chatInstance - The chat instance
+     */
+    populate(chatInstance) {
+        if (!this.modalElement || !chatInstance) {
+            return;
+        }
+        
+        const nameInput = this.modalElement.querySelector('.chat-settings-name');
+        const scopeInput = this.modalElement.querySelector('.chat-settings-scope');
+        const saveHistoryCheckbox = this.modalElement.querySelector('.chat-settings-save-history');
+        const maxHeightInput = this.modalElement.querySelector('.chat-settings-max-height');
+        const projectSelect = this.modalElement.querySelector('.chat-settings-project');
+        
+        if (nameInput) {
+            nameInput.value = chatInstance.name || '';
+        }
+        
+        if (scopeInput) {
+            scopeInput.value = chatInstance.scopeDirectory || '';
+        }
+        
+        if (saveHistoryCheckbox) {
+            saveHistoryCheckbox.checked = chatInstance.saveHistory !== false;
+        }
+        
+        if (maxHeightInput) {
+            maxHeightInput.value = chatInstance.maxHeight || '';
+        }
+        
+        if (projectSelect) {
+            // Populate project select if needed
+            // This would require access to StateManager, so we'll handle it externally
+        }
+    }
+    
+    /**
+     * Gets form data
+     * @returns {object} Form data object
+     */
+    getFormData() {
+        if (!this.modalElement) {
+            return null;
+        }
+        
+        const nameInput = this.modalElement.querySelector('.chat-settings-name');
+        const scopeInput = this.modalElement.querySelector('.chat-settings-scope');
+        const saveHistoryCheckbox = this.modalElement.querySelector('.chat-settings-save-history');
+        const maxHeightInput = this.modalElement.querySelector('.chat-settings-max-height');
+        
+        const maxHeightValue = maxHeightInput ? maxHeightInput.value.trim() : '';
+        const maxHeight = maxHeightValue ? parseInt(maxHeightValue, 10) : null;
+        
+        return {
+            name: nameInput ? nameInput.value.trim() : '',
+            scopeDirectory: scopeInput ? scopeInput.value.trim() : '',
+            saveHistory: saveHistoryCheckbox ? saveHistoryCheckbox.checked : true,
+            maxHeight: maxHeight && !isNaN(maxHeight) ? maxHeight : null
+        };
+    }
+    
+    /**
+     * Validates the form data
+     * @returns {object} { valid: boolean, errors?: Array<string> }
+     */
+    validate() {
+        const data = this.getFormData();
+        if (!data) {
+            return { valid: false, errors: ['Form not available'] };
+        }
+        
+        const errors = [];
+        
+        // Validate name
+        if (!data.name || !data.name.trim()) {
+            errors.push('Chat name is required');
+        }
+        
+        // Validate scope directory if provided
+        if (data.scopeDirectory && data.scopeDirectory.trim()) {
+            const normalized = normalize(data.scopeDirectory.trim());
+            // Basic validation - path should not be empty after normalization
+            if (!normalized) {
+                errors.push('Invalid scope directory path');
+            }
+        }
+        
+        return {
+            valid: errors.length === 0,
+            errors: errors.length > 0 ? errors : undefined
+        };
+    }
+    
+    /**
+     * Handles save button click
+     * @private
+     */
+    _handleSave() {
+        const validation = this.validate();
+        
+        if (!validation.valid) {
+            // Show errors (could emit event or display in UI)
+            this.eventSystem.emit('chat:settings:validation-error', {
+                source: 'ChatSettings',
+                data: { errors: validation.errors }
+            });
+            return;
+        }
+        
+        const data = this.getFormData();
+        
+        if (this.onSaveCallback) {
+            this.onSaveCallback(this.currentChatId, data);
+        }
+        
+        // Emit event
+        this.eventSystem.emit('chat:settings:saved', {
+            source: 'ChatSettings',
+            data: { chatId: this.currentChatId, data }
+        });
+        
+        this.hide();
+    }
+    
+    /**
+     * Sets the save callback
+     * @param {function} callback - Callback function(chatId, data)
+     */
+    onSave(callback) {
+        this.onSaveCallback = callback;
+    }
+    
+    /**
+     * Sets the cancel callback
+     * @param {function} callback - Callback function()
+     */
+    onCancel(callback) {
+        this.onCancelCallback = callback;
+    }
+}
+

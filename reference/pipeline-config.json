@@ -1,0 +1,454 @@
+{
+  "cases": {
+    "1": {
+      "name": "Codebase Analysis",
+      "description": "Complete access to source code, documentation, and implementation",
+      "workflow": {
+        "research": {
+          "modifiers": ["codebase-rag"],
+          "step": "core/research.md"
+        },
+        "feature-extraction": {
+          "modifiers": ["codebase-deep"],
+          "step": "core/feature-extraction.md"
+        },
+        "validation": {
+          "modifiers": ["codebase"],
+          "step": "core/validation.md"
+        },
+        "app-analysis": {
+          "modifiers": [],
+          "step": "core/app-analysis.md"
+        },
+        "decomposition": {
+          "modifiers": ["codebase-pseudocode"],
+          "step": "core/decomposition.md"
+        },
+        "atomic-features": {
+          "modifiers": [],
+          "step": "core/atomic-features.md"
+        },
+        "ux-specification": {
+          "modifiers": [],
+          "step": "core/ux-specification.md"
+        }
+      },
+      "processSteps": {
+        "validation-loop": {
+          "triggers": ["research", "feature-extraction", "app-analysis", "decomposition", "atomic-features"],
+          "step": "process-steps/validation-loop.md"
+        },
+        "refinement-loop": {
+          "triggers": ["decomposition"],
+          "step": "process-steps/refinement-loop.md"
+        }
+      }
+    },
+    "2": {
+      "name": "UI/UX-Only Analysis",
+      "description": "Only access to running application UI, no source code",
+      "workflow": {
+        "research": {
+          "modifiers": ["ui-only"],
+          "step": "core/research.md"
+        },
+        "feature-extraction": {
+          "modifiers": ["ui-only"],
+          "step": "core/feature-extraction.md"
+        },
+        "validation": {
+          "modifiers": ["ui-only"],
+          "step": "core/validation.md"
+        },
+        "app-analysis": {
+          "modifiers": [],
+          "step": "core/app-analysis.md"
+        },
+        "decomposition": {
+          "modifiers": ["standard"],
+          "step": "core/decomposition.md"
+        },
+        "atomic-features": {
+          "modifiers": [],
+          "step": "core/atomic-features.md"
+        },
+        "ux-specification": {
+          "modifiers": [],
+          "step": "core/ux-specification.md"
+        }
+      },
+      "inference": {
+        "data-model-inference": {
+          "step": "inference/data-model-inference.md",
+          "after": "atomic-features"
+        },
+        "state-machine-inference": {
+          "step": "inference/state-machine-inference.md",
+          "after": "data-model-inference"
+        },
+        "api-contract-inference": {
+          "step": "inference/api-contract-inference.md",
+          "after": "state-machine-inference"
+        },
+        "behavioral-implementation-spec": {
+          "step": "inference/behavioral-implementation-spec.md",
+          "after": "api-contract-inference"
+        }
+      },
+      "processSteps": {
+        "validation-loop": {
+          "triggers": ["research", "feature-extraction", "app-analysis", "decomposition", "atomic-features", "data-model-inference", "state-machine-inference", "api-contract-inference"],
+          "step": "process-steps/validation-loop.md"
+        }
+      }
+    },
+    "3": {
+      "name": "User Input Analysis",
+      "description": "Users provide unstructured descriptions, VTT files, or transcripts",
+      "workflow": {
+        "research": {
+          "modifiers": ["user-input"],
+          "step": "core/research.md",
+          "specialized": "case3-specialized/user-description-parsing.md"
+        },
+        "feature-extraction": {
+          "modifiers": ["user-input"],
+          "step": "core/feature-extraction.md",
+          "specialized": "case3-specialized/user-description-parsing.md"
+        },
+        "validation": {
+          "modifiers": ["user-input"],
+          "step": "core/validation.md"
+        },
+        "app-analysis": {
+          "modifiers": [],
+          "step": "core/app-analysis.md"
+        },
+        "decomposition": {
+          "modifiers": ["standard"],
+          "step": "core/decomposition.md"
+        },
+        "atomic-features": {
+          "modifiers": [],
+          "step": "core/atomic-features.md"
+        },
+        "ux-specification": {
+          "modifiers": [],
+          "step": "core/ux-specification.md"
+        }
+      },
+      "processSteps": {
+        "validation-loop": {
+          "triggers": ["research", "feature-extraction", "app-analysis", "decomposition", "atomic-features"],
+          "step": "process-steps/validation-loop.md"
+        },
+        "integration-loop": {
+          "triggers": ["research", "feature-extraction"],
+          "step": "process-steps/integration-loop.md",
+          "condition": "when {EXISTING_FEATURES} provided"
+        }
+      },
+      "specialized": {
+        "vtt-processing": {
+          "step": "case3-specialized/vtt-transcript-processing.md",
+          "usedIn": ["research"]
+        }
+      }
+    },
+    "4": {
+      "name": "Input Preparation",
+      "description": "Process and organize raw user input into structured files for injection into pipeline steps",
+      "workflow": {
+        "input-parsing": {
+          "modifiers": [],
+          "step": "core/input-parsing.md"
+        },
+        "input-organization": {
+          "modifiers": [],
+          "step": "core/input-organization.md"
+        },
+        "input-structuring": {
+          "modifiers": [],
+          "step": "core/input-structuring.md"
+        },
+        "output-mapping": {
+          "modifiers": [],
+          "step": "core/output-mapping.md"
+        }
+      },
+      "processSteps": {
+        "validation-loop": {
+          "triggers": ["input-parsing", "input-organization", "input-structuring", "output-mapping"],
+          "step": "process-steps/validation-loop.md"
+        }
+      },
+      "specialized": {
+        "text-parsing": {
+          "step": "case4-specialized/text-parsing.md",
+          "usedIn": ["input-parsing"]
+        },
+        "vtt-parsing": {
+          "step": "case4-specialized/vtt-parsing.md",
+          "usedIn": ["input-parsing"]
+        },
+        "transcript-parsing": {
+          "step": "case4-specialized/transcript-parsing.md",
+          "usedIn": ["input-parsing"]
+        },
+        "user-story-parsing": {
+          "step": "case4-specialized/user-story-parsing.md",
+          "usedIn": ["input-parsing"]
+        }
+      }
+    },
+    "5": {
+      "name": "Iterative Idea Refinement",
+      "description": "Refine ideas through iterative documentation review, user interrogation, and atomization. Produces flow document, atomic document, architecture document, and pseudocode.",
+      "workflow": {
+        "idea-capture": {
+          "modifiers": [],
+          "step": "core/idea-capture.md"
+        },
+        "documentation-review": {
+          "modifiers": [],
+          "step": "core/documentation-review.md"
+        },
+        "user-interrogation": {
+          "modifiers": [],
+          "step": "core/user-interrogation.md"
+        },
+        "iterative-refinement": {
+          "modifiers": [],
+          "step": "core/iterative-refinement.md"
+        },
+        "atomization": {
+          "modifiers": [],
+          "step": "core/atomization.md"
+        },
+        "flow-document": {
+          "modifiers": [],
+          "step": "core/flow-document.md"
+        },
+        "atomic-document": {
+          "modifiers": [],
+          "step": "core/atomic-document.md"
+        },
+        "architecture-document": {
+          "modifiers": [],
+          "step": "core/architecture-document.md"
+        },
+        "pseudocode-document": {
+          "modifiers": [],
+          "step": "core/pseudocode-document.md"
+        },
+        "detailed-pseudocode": {
+          "modifiers": [],
+          "step": "core/detailed-pseudocode.md",
+          "optional": true
+        },
+        "implementation-specification": {
+          "modifiers": [],
+          "step": "core/implementation-specification.md"
+        }
+      },
+      "processSteps": {
+        "validation-loop": {
+          "triggers": ["idea-capture", "documentation-review", "user-interrogation", "iterative-refinement", "atomization"],
+          "step": "process-steps/validation-loop.md"
+        },
+        "refinement-loop": {
+          "triggers": ["iterative-refinement", "atomization"],
+          "step": "process-steps/refinement-loop.md"
+        },
+        "post-implementation-validation": {
+          "triggers": ["implementation-specification"],
+          "step": "process-steps/post-implementation-validation.md",
+          "required": false
+        }
+      }
+    },
+    "6": {
+      "name": "Poiesis",
+      "description": "Open ideation workflow with four flexible steps: Theoria (pre-conceptual orientation), Praxis (method and action), Doctrine (declared structure), and Poiesis (generative emergence). Steps can be linked, repeated, and combined in any order.",
+      "workflow": {
+        "theoria": {
+          "modifiers": [],
+          "step": "core/theoria.md",
+          "flexible": true,
+          "repeatable": true,
+          "linkable": true
+        },
+        "praxis": {
+          "modifiers": [],
+          "step": "core/praxis.md",
+          "flexible": true,
+          "repeatable": true,
+          "linkable": true
+        },
+        "doctrine": {
+          "modifiers": [],
+          "step": "core/doctrine.md",
+          "flexible": true,
+          "repeatable": true,
+          "linkable": true
+        },
+        "poiesis": {
+          "modifiers": [],
+          "step": "core/poiesis.md",
+          "flexible": true,
+          "repeatable": true,
+          "linkable": true
+        }
+      },
+      "processSteps": {
+        "validation-loop": {
+          "triggers": ["theoria", "praxis", "doctrine", "poiesis"],
+          "step": "process-steps/validation-loop.md",
+          "required": false
+        }
+      }
+    },
+    "7": {
+      "name": "Physis",
+      "description": "Materialization workflow that transforms Poiesis (creative expression) into Physis (implementable form). Creates concrete, implementable specification documents that can be used in other cases to build applications or systems.",
+      "workflow": {
+        "physis": {
+          "modifiers": [],
+          "step": "core/physis.md",
+          "flexible": true,
+          "repeatable": true,
+          "linkable": true
+        }
+      },
+      "processSteps": {
+        "validation-loop": {
+          "triggers": ["physis"],
+          "step": "process-steps/validation-loop.md",
+          "required": false
+        }
+      }
+    }
+  },
+  "caseChaining": {
+    "1->3": {
+      "description": "Codebase analysis, then enhance with user descriptions",
+      "case3Modifiers": {
+        "research": ["enhancement-input", "user-input"],
+        "feature-extraction": ["enhancement-input", "user-input"],
+        "decomposition": ["enhancement-input"],
+        "atomic-features": ["enhancement-input"]
+      },
+      "processSteps": {
+        "integration-loop": {
+          "required": true,
+          "triggers": ["research", "feature-extraction"]
+        }
+      }
+    },
+    "2->3": {
+      "description": "UI/UX-only analysis, then enhance with user descriptions",
+      "case3Modifiers": {
+        "research": ["enhancement-input", "user-input"],
+        "feature-extraction": ["enhancement-input", "user-input"],
+        "decomposition": ["enhancement-input"],
+        "atomic-features": ["enhancement-input"]
+      },
+      "processSteps": {
+        "integration-loop": {
+          "required": true,
+          "triggers": ["research", "feature-extraction"]
+        }
+      }
+    },
+    "3->1": {
+      "description": "User descriptions first, then codebase analysis to validate/enhance",
+      "case1Modifiers": {
+        "research": ["codebase-rag", "enhancement-input"],
+        "feature-extraction": ["codebase-deep", "enhancement-input"]
+      },
+      "processSteps": {
+        "integration-loop": {
+          "required": true,
+          "triggers": ["feature-extraction"]
+        }
+      }
+    },
+    "3->2": {
+      "description": "User descriptions first, then UI/UX analysis to validate/enhance",
+      "case2Modifiers": {
+        "research": ["ui-only", "enhancement-input"],
+        "feature-extraction": ["ui-only", "enhancement-input"]
+      },
+      "processSteps": {
+        "integration-loop": {
+          "required": true,
+          "triggers": ["feature-extraction"]
+        }
+      }
+    },
+    "4->1": {
+      "description": "Input preparation, then codebase analysis with structured input",
+      "inputMapping": {
+        "research": "research-input",
+        "feature-extraction": "feature-extraction-input",
+        "app-analysis": "app-analysis-input",
+        "decomposition": "decomposition-input",
+        "atomic-features": "atomic-features-input",
+        "ux-specification": "ux-specification-input"
+      }
+    },
+    "4->2": {
+      "description": "Input preparation, then UI/UX analysis with structured input",
+      "inputMapping": {
+        "research": "research-input",
+        "feature-extraction": "feature-extraction-input",
+        "app-analysis": "app-analysis-input",
+        "decomposition": "decomposition-input",
+        "atomic-features": "atomic-features-input",
+        "ux-specification": "ux-specification-input"
+      }
+    },
+    "4->3": {
+      "description": "Input preparation, then user input analysis with structured input",
+      "inputMapping": {
+        "research": "research-input",
+        "feature-extraction": "feature-extraction-input",
+        "app-analysis": "app-analysis-input",
+        "decomposition": "decomposition-input",
+        "atomic-features": "atomic-features-input",
+        "ux-specification": "ux-specification-input"
+      }
+    }
+  },
+  "variables": {
+    "CASE": "Case number (1, 2, or 3)",
+    "MODIFIERS": "List of active modifiers for current step",
+    "PREVIOUS_OUTPUT": "Output from previous step in workflow",
+    "INPUT_SOURCES": "Available input sources based on case and modifiers",
+    "EXISTING_FEATURES": "Existing feature documentation (when enhancing)",
+    "PROCESS_STEP_TRIGGERS": "Instructions for when to invoke process steps",
+    "WORKFLOW_CONTEXT": "Current position in workflow",
+    "USER_DESCRIPTION": "User-provided description text",
+    "VTT_TRANSCRIPT": "VTT file or transcript content",
+    "UX_SPECIFICATIONS": "UX specification output (for inference steps)",
+    "DATA_MODELS_OUTPUT": "Output from data model inference",
+    "STATE_MACHINES_OUTPUT": "Output from state machine inference",
+    "API_CONTRACTS_OUTPUT": "Output from API contract inference",
+    "ATOMIC_FEATURES_OUTPUT": "Output from atomic features step",
+    "USER_INPUT": "User-provided input from the input field",
+    "INPUT": "Input content (alias for USER_INPUT)"
+  },
+  "modifierLayering": {
+    "rules": [
+      "Base modifiers (codebase-rag, ui-only, user-input) are processed first",
+      "Layering modifiers (enhancement-input) are processed after base modifiers",
+      "When multiple modifiers active, process in order: base modifiers, then layering modifiers",
+      "Integration Loop is required when enhancement-input is combined with other modifiers"
+    ],
+    "priority": {
+      "base": ["codebase-rag", "codebase-deep", "ui-only", "user-input", "codebase", "codebase-pseudocode", "standard"],
+      "layering": ["enhancement-input"]
+    }
+  }
+}
+

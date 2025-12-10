@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Specification Quality Checker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #1e1e1e;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            margin-bottom: 20px;
+            color: #4a9eff;
+        }
+        
+        .input-section {
+            margin-bottom: 30px;
+        }
+        
+        textarea {
+            width: 100%;
+            min-height: 300px;
+            padding: 15px;
+            background: #2d2d2d;
+            color: #e0e0e0;
+            border: 1px solid #404040;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            resize: vertical;
+        }
+        
+        button {
+            padding: 12px 24px;
+            background: #4a9eff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            margin-top: 10px;
+        }
+        
+        button:hover {
+            background: #3d8ef5;
+        }
+        
+        .results {
+            margin-top: 30px;
+        }
+        
+        .score-card {
+            background: #2d2d2d;
+            border: 1px solid #404040;
+            border-radius: 6px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .score-overall {
+            font-size: 48px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .score-overall.pass {
+            color: #4caf50;
+        }
+        
+        .score-overall.fail {
+            color: #f44336;
+        }
+        
+        .score-overall.warning {
+            color: #ff9800;
+        }
+        
+        .score-breakdown {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .score-item {
+            background: #1e1e1e;
+            padding: 15px;
+            border-radius: 6px;
+        }
+        
+        .score-item-label {
+            font-size: 12px;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        
+        .score-item-value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        
+        .issues-section {
+            margin-top: 30px;
+        }
+        
+        .issues-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            background: #2d2d2d;
+            border: 1px solid #404040;
+            border-radius: 6px 6px 0 0;
+            cursor: pointer;
+            color: #888;
+        }
+        
+        .tab.active {
+            background: #404040;
+            color: #e0e0e0;
+            border-bottom: none;
+        }
+        
+        .issues-list {
+            background: #2d2d2d;
+            border: 1px solid #404040;
+            border-radius: 6px;
+            padding: 20px;
+        }
+        
+        .issue {
+            padding: 15px;
+            margin-bottom: 10px;
+            background: #1e1e1e;
+            border-left: 4px solid;
+            border-radius: 4px;
+        }
+        
+        .issue.high {
+            border-left-color: #f44336;
+        }
+        
+        .issue.medium {
+            border-left-color: #ff9800;
+        }
+        
+        .issue.low {
+            border-left-color: #4a9eff;
+        }
+        
+        .issue-type {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #888;
+            margin-bottom: 5px;
+        }
+        
+        .issue-message {
+            font-weight: 500;
+            margin-bottom: 5px;
+        }
+        
+        .issue-context {
+            font-size: 12px;
+            color: #888;
+            font-family: 'Courier New', monospace;
+            margin-top: 5px;
+        }
+        
+        .recommendations {
+            margin-top: 30px;
+        }
+        
+        .recommendation {
+            padding: 15px;
+            margin-bottom: 10px;
+            background: #2d2d2d;
+            border: 1px solid #404040;
+            border-radius: 6px;
+        }
+        
+        .recommendation.high {
+            border-left: 4px solid #f44336;
+        }
+        
+        .recommendation.medium {
+            border-left: 4px solid #ff9800;
+        }
+        
+        .recommendation-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #888;
+            margin-bottom: 5px;
+        }
+        
+        .recommendation-message {
+            font-weight: 500;
+            margin-bottom: 5px;
+        }
+        
+        .recommendation-action {
+            font-size: 14px;
+            color: #b8b8b8;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Specification Quality Checker</h1>
+        
+        <div class="input-section">
+            <h2>Paste Specification</h2>
+            <textarea id="specInput" placeholder="Paste your Complete Implementation Specification here..."></textarea>
+            <button onclick="checkQuality()">Check Quality</button>
+        </div>
+        
+        <div id="results" class="results" style="display: none;">
+            <div class="score-card">
+                <div id="overallScore" class="score-overall"></div>
+                <div id="overallStatus"></div>
+                <div class="score-breakdown">
+                    <div class="score-item">
+                        <div class="score-item-label">Completeness</div>
+                        <div class="score-item-value" id="completenessScore"></div>
+                    </div>
+                    <div class="score-item">
+                        <div class="score-item-label">Specificity</div>
+                        <div class="score-item-value" id="specificityScore"></div>
+                    </div>
+                    <div class="score-item">
+                        <div class="score-item-label">Consistency</div>
+                        <div class="score-item-value" id="consistencyScore"></div>
+                    </div>
+                    <div class="score-item">
+                        <div class="score-item-label">Coverage</div>
+                        <div class="score-item-value" id="coverageScore"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="issues-section">
+                <div class="issues-tabs">
+                    <div class="tab active" onclick="showIssues('high')">High Priority (<span id="highCount">0</span>)</div>
+                    <div class="tab" onclick="showIssues('medium')">Medium Priority (<span id="mediumCount">0</span>)</div>
+                    <div class="tab" onclick="showIssues('low')">Low Priority (<span id="lowCount">0</span>)</div>
+                </div>
+                <div id="issuesList" class="issues-list"></div>
+            </div>
+            
+            <div class="recommendations">
+                <h2>Recommendations</h2>
+                <div id="recommendationsList"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="spec-quality-checker.js"></script>
+    <script>
+        let currentReport = null;
+        let currentTab = 'high';
+        
+        function checkQuality() {
+            const specText = document.getElementById('specInput').value;
+            if (!specText.trim()) {
+                alert('Please paste a specification to check');
+                return;
+            }
+            
+            const checker = new SpecQualityChecker();
+            currentReport = checker.generateReport(specText);
+            
+            displayResults(currentReport);
+        }
+        
+        function displayResults(report) {
+            document.getElementById('results').style.display = 'block';
+            
+            // Overall score
+            const overallScore = report.summary.overallScore;
+            const scoreElement = document.getElementById('overallScore');
+            scoreElement.textContent = overallScore + '%';
+            scoreElement.className = 'score-overall ' + 
+                (overallScore >= 80 ? 'pass' : overallScore >= 60 ? 'warning' : 'fail');
+            
+            document.getElementById('overallStatus').textContent = 
+                report.summary.passed ? '✓ PASS' : '✗ NEEDS IMPROVEMENT';
+            
+            // Breakdown scores
+            document.getElementById('completenessScore').textContent = report.summary.completeness + '%';
+            document.getElementById('specificityScore').textContent = report.summary.specificity + '%';
+            document.getElementById('consistencyScore').textContent = report.summary.consistency + '%';
+            document.getElementById('coverageScore').textContent = report.summary.coverage + '%';
+            
+            // Issue counts
+            document.getElementById('highCount').textContent = report.issues.high.length;
+            document.getElementById('mediumCount').textContent = report.issues.medium.length;
+            document.getElementById('lowCount').textContent = report.issues.low.length;
+            
+            // Display issues
+            showIssues('high');
+            
+            // Display recommendations
+            const recList = document.getElementById('recommendationsList');
+            recList.innerHTML = '';
+            for (const rec of report.recommendations) {
+                const div = document.createElement('div');
+                div.className = 'recommendation ' + rec.priority;
+                div.innerHTML = `
+                    <div class="recommendation-label">${rec.category.toUpperCase()} - ${rec.priority.toUpperCase()} PRIORITY</div>
+                    <div class="recommendation-message">${rec.message}</div>
+                    <div class="recommendation-action">${rec.action}</div>
+                `;
+                recList.appendChild(div);
+            }
+        }
+        
+        function showIssues(severity) {
+            currentTab = severity;
+            
+            // Update tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event?.target?.classList.add('active');
+            
+            // Show issues
+            const issues = currentReport.issues[severity];
+            const issuesList = document.getElementById('issuesList');
+            issuesList.innerHTML = '';
+            
+            if (issues.length === 0) {
+                issuesList.innerHTML = '<div style="text-align: center; color: #888; padding: 40px;">No ' + severity + ' priority issues found!</div>';
+                return;
+            }
+            
+            for (const issue of issues) {
+                const div = document.createElement('div');
+                div.className = 'issue ' + issue.severity;
+                let html = `
+                    <div class="issue-type">${issue.type.toUpperCase()}</div>
+                    <div class="issue-message">${issue.message}</div>
+                `;
+                if (issue.line) {
+                    html += `<div class="issue-context">Line ${issue.line}</div>`;
+                }
+                if (issue.context) {
+                    html += `<div class="issue-context">${escapeHtml(issue.context)}</div>`;
+                }
+                div.innerHTML = html;
+                issuesList.appendChild(div);
+            }
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
+

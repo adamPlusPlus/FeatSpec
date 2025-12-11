@@ -1,0 +1,11 @@
+Fix modal scrolling issues and add server scripts
+
+- Fixed modal scrolling by adding overflow and flex properties to modal-body
+- Fixed case selection modal scrolling with proper flex layout
+- Renamed serve.sh to start-server.sh for clarity
+- Added PowerShell version start-server.ps1 for Windows users
+- Added missing reference documents (feature-spec-reference.md, master-pipeline-template.md)
+- Removed hardcoded API keys from server.js (now requires CURSOR_API_KEY env var)
+- Added server.log to .gitignore
+- Updated .gitignore to exclude docs/, saved-files/, automation-output/, projects/, _test/
+

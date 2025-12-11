@@ -105,6 +105,11 @@ class ContextMenuHandler {
             return;
         }
         
+        // Allow right-click in modals (don't prevent default, allow browser context menu)
+        if (e.target.closest('.modal')) {
+            return; // Allow browser context menu in modals
+        }
+        
         // Allow context menu on project group input or select
         const projectGroupInput = e.target.closest('#project-group-name') || e.target.closest('#project-group-select') || e.target.closest('.project-group-container');
         if (projectGroupInput) {

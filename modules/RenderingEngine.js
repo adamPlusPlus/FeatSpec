@@ -290,21 +290,67 @@ class RenderingEngine {
             
             // Restore focus and cursor position if it was a textarea
             if (isTextareaFocused && textareaSectionId === section.sectionId && textareaType) {
-                const selector = `.section-${textareaType}[data-section-id="${section.sectionId}"]`;
+                // Build selector - handle override-instructions specially
+                let selector;
+                if (textareaType === 'override-instructions') {
+                    selector = `.section-override-instructions[data-section-id="${section.sectionId}"]`;
+                } else {
+                    selector = `.section-${textareaType}[data-section-id="${section.sectionId}"]`;
+                }
+                
+                // Function to restore scroll and focus
+                const restoreTextareaState = (textarea) => {
+                    if (!textarea) return;
+                    
+                    // Save current scroll position to prevent it from being lost
+                    const savedScrollTop = textareaScrollTop;
+                    
+                    // Restore scroll position BEFORE focus to prevent scroll jump
+                    if (savedScrollTop !== null && savedScrollTop >= 0) {
+                        textarea.scrollTop = savedScrollTop;
+                    }
+                    
+                    // Restore focus and cursor position
+                    textarea.focus({ preventScroll: true }); // Try to prevent scroll on focus
+                    if (cursorPosition !== null && cursorPosition <= textarea.value.length) {
+                        textarea.setSelectionRange(cursorPosition, cursorPosition);
+                    }
+                    
+                    // Force scroll position again immediately after focus
+                    if (savedScrollTop !== null && savedScrollTop >= 0) {
+                        textarea.scrollTop = savedScrollTop;
+                    }
+                };
+                
+                // Try to find and restore immediately
                 const newTextarea = sectionView.querySelector(selector);
                 if (newTextarea) {
-                    // Use setTimeout to ensure the textarea is fully rendered
+                    // Restore multiple times to ensure it sticks
+                    // First attempt - immediate
+                    restoreTextareaState(newTextarea);
+                    
+                    // Second attempt - after a short delay
                     setTimeout(() => {
-                        // Restore textarea scroll position first
-                        if (textareaScrollTop !== null && textareaScrollTop >= 0) {
-                            newTextarea.scrollTop = textareaScrollTop;
+                        restoreTextareaState(newTextarea);
+                    }, 10);
+                    
+                    // Third attempt - after layout
+                    requestAnimationFrame(() => {
+                        restoreTextareaState(newTextarea);
+                        
+                        // Fourth attempt - after another frame
+                        requestAnimationFrame(() => {
+                            restoreTextareaState(newTextarea);
+                        });
+                    });
+                } else {
+                    // If textarea not found immediately, try again after a delay
+                    setTimeout(() => {
+                        const retryTextarea = sectionView.querySelector(selector);
+                        if (retryTextarea) {
+                            restoreTextareaState(retryTextarea);
                         }
-                        // Then restore focus and cursor position
-                        newTextarea.focus();
-                        if (cursorPosition !== null && cursorPosition <= newTextarea.value.length) {
-                            newTextarea.setSelectionRange(cursorPosition, cursorPosition);
-                        }
-                    }, 0);
+                    }, 50);
                 }
             }
         });

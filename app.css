@@ -2224,6 +2224,28 @@ header h1 {
     line-height: 1.5;
 }
 
+/* Automation Engine Options */
+.automation-engine-option {
+    flex: 1;
+    padding: 12px;
+    background: #2d2d2d;
+    border: 2px solid #404040;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    text-align: center;
+}
+
+.automation-engine-option:hover {
+    border-color: #555555;
+    background: #363636;
+}
+
+.automation-engine-option.selected {
+    border-color: #4a9eff;
+    background: #2d3d4d;
+}
+
 /* Modifier Editor Modal */
 .modifier-editor-content {
     max-width: 500px;

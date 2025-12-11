@@ -27,7 +27,11 @@
 
 **Tip**: Praxis has two modes: **Generation Mode** (systematized pattern execution) and **Inquisition Mode** (problem setting, doubt, interrogation).
 
-**CRITICAL**: Your task is to **IDENTIFY and ARTICULATE** the praxis (method, process, operation) that **already exists** in the input, not to create a new praxis. The praxis is already present in the input—you must reveal it, not invent it.
+**CRITICAL - Extraction vs. Inference**:
+- **If explicit methods/processes/operations exist in input**: Extract them directly using quotes or essential content
+- **If input contains only cAtoms (axiomatic foundations)**: Infer the methods/processes/operations that would **instantiate, test, or operationalize** those cAtoms. Ground these inferred methods in the cAtoms—they must be methods that directly implement or test the axiomatic foundations, not arbitrary inventions.
+- **If input contains both**: Extract explicit methods AND infer methods from cAtoms
+- **Always ground in input**: Whether extracting or inferring, every praxis cNode must be traceable to specific cAtoms, statements, or structures in the input
 
 **CRITICAL - Context Integration**: 
 - **Previous Steps Available**: All previously established cAtoms, ccompounds (compound structures), and cElements from previous steps (Theoria, Doctrine, Praxis, Poiesis) are available in the conversation history
@@ -70,33 +74,61 @@
 
 **Praxis Tasks:**
 
-**CRITICAL INSTRUCTION**: Your output must be **cNodes and cElements**, not summaries or explanations. Extract the actual praxis cNodes from the input. Do NOT explain what praxis is. Do NOT invent content that doesn't exist in the input. Extract what exists in the input, using direct quotes when available, or extracting the essential content when the meaning is clear but wording differs.
+**CRITICAL INSTRUCTION**: Your output must be **cNodes and cElements**, not summaries or explanations. Extract or infer the actual praxis cNodes from the input. Do NOT explain what praxis is. 
 
-1. **Extract Praxis cNodes** (from the input)
+**CRITICAL - Praxic cAtoms vs Doctrinal cAtoms**:
+- **Praxic cAtoms are QUESTIONS, QUERIES, RECONSIDERATIONS** — not rules or constraints
+- **Doctrinal cAtoms are RULES, CONSTRAINTS, "MUST" statements** — these belong in Doctrine, not Praxis
+- **Praxic cAtoms** should be stated as:
+  - Questions: "What if...?", "How do we test...?", "Why does...?"
+  - Queries: "Does X actually work?", "What happens when Y fails?"
+  - Reconsiderations: "Should we reconsider Z?", "What if the assumption about W is wrong?"
+  - Inquiries: "How can we probe...?", "What would reveal...?"
+- **Do NOT** state praxic cAtoms as rules like "Methods must X" — those are doctrinal cAtoms
+
+**Extraction Rules**:
+- **If input contains explicit methods/processes/operations**: Extract them directly using quotes when available, or extract essential content when wording differs
+- **If input contains only cAtoms (especially theoria cAtoms)**: Infer questions, queries, or reconsiderations that would test, probe, or challenge those cAtoms. Ground each inferred inquiry in specific cAtoms—show which cAtoms it questions or tests
+- **Always trace to input**: Every praxis cNode must be traceable to specific content in the input (cAtoms, statements, structures)
+
+1. **Extract Praxic cAtoms** (from the input)
+   - Identify questions, queries, reconsiderations, or inquiries **as cAtoms** (type: `cAtom`)
+   - **CRITICAL**: Praxic cAtoms are QUESTIONS/QUERIES/RECONSIDERATIONS, not rules
+   - Extract or infer questions that test, probe, or challenge theoria cAtoms, doctrinal assumptions, or existing methods
+   - Examples of praxic cAtom forms:
+     - "What if [theoria cAtom] is wrong?"
+     - "How do we test whether [assumption] holds?"
+     - "What happens when [process] fails?"
+     - "Should we reconsider [doctrine]?"
+     - "Does [method] actually preserve [property]?"
+   - Ground each praxic cAtom in the cAtoms or structures it questions/tests
+   - Label each cAtom with its type: `cAtom`
+
+2. **Extract or Infer Praxis cNodes** (from the input)
    - Identify each distinct method, process, or operation **as a separate cNode**
    - Label each cNode with its type: `praxis`
-   - Determine mode: `generation` or `inquisition` or `combined` - [extract from input based on what the method does]
-   - Extract method/process **from input** - use direct quotes when available, otherwise extract the essential method/process content
-   - Extract operations and transformations **from input** - extract what operations and transformations are described
+   - Determine mode: `generation` or `inquisition` or `combined` - [extract from input based on what the method does, or infer from cAtom characteristics]
+   - Extract or infer method/process **from input** - use direct quotes when available, otherwise extract essential content, or infer from cAtoms with clear grounding
+   - Extract or infer operations and transformations **from input** - extract what operations are described, or infer operations that would implement the cAtoms
 
-2. **Extract Operational cNodes** (from the input)
+3. **Extract Operational cNodes** (from the input)
    - Identify each cNode operation **as a cNode** (type: `operation`)
    - Identify each trace pattern **as a cNode** (type: `trace-pattern`)
    - Identify each Body/cElement cluster **as a cNode** (type: `body` or `cluster`)
    - Identify each signalpath/tracegraph structure **as a cNode** (type: `signalpath` or `tracegraph`)
 
-3. **Extract Composition cNodes** (from the input)
+4. **Extract Composition cNodes** (from the input)
    - Identify how cNodes compose **as composition cNodes** (type: `composition`)
    - Identify new cNodes/claimnodes generated **as generated cNodes** (type: `generated-cnode`)
 
-4. **Extract Relationship cNodes** (from the input)
+5. **Extract Relationship cNodes** (from the input)
    - Identify relationships to previous steps **as relationship cNodes** (type: `relationship`)
    - Identify affinity bonds **as bond cNodes** (type: `affinity-bond`)
    - Identify contradictions **as contradiction cNodes** (type: `contradiction`)
    - Identify ecstasis potential **as ecstasis cNodes** (type: `ecstasis`)
    - Identify trace recursion **as recursion cNodes** (type: `trace-recursion`)
 
-5. **Extract Instance-Specific cElement Properties** (from input only)
+6. **Extract Instance-Specific cElement Properties** (from input only)
    - For each praxis cNode, extract instance-specific properties **directly from the input**:
      - **State**: [Extract from input: Highly dynamic/Stable/Adaptive/etc. - describe the actual state of THIS specific method]
      - **Trace Behavior**:
@@ -109,7 +141,7 @@
    - **DO NOT** include static type-level properties (Function, Epistemic Role, Ecstasis Role) - these are redundant with the cNode type.
    - **DO** provide rich, specific details about THIS particular instance extracted from the input.
 
-6. **Extract Cross-Type Interactions and Derivations** (from input)
+7. **Extract Cross-Type Interactions and Derivations** (from input)
    - **Interactions**: Identify how THIS praxis cNode interacts with other cElement types (Theoria, Doctrine, Poiesis, Techne, Design, Foam):
      - **With Theoria**: [How does THIS method interact with orientations? Does it test, instantiate, or challenge theoria?]
      - **With Doctrine**: [How does THIS method interact with rules? Does it challenge, reify, or transform doctrine?]
@@ -136,15 +168,33 @@
 ```markdown
 ## Praxis cNodes
 
+### cAtom: [Question/Query/Reconsideration]
+**Type:** `cAtom`
+**Source:** input
+**Form:** [question / query / reconsideration / inquiry]
+
+**Content:**
+- **Question/Query**: [The actual question, query, or reconsideration - e.g., "What if seamless continuity cannot be preserved across all transformations?", "How do we test whether data identity persists?", "Should we reconsider the assumption that formats are reversible?"]
+- **Tests/Probes**: [What cAtom, assumption, or structure does this question test or probe?]
+- **Grounded in**: [Which theoria cAtoms, doctrinal assumptions, or existing methods does this question challenge or test?]
+
+**Anchors:**
+- [What structures, processes, or assumptions does this question anchor to?]
+
+**Derivability**: [Derivable/Axiomatic] - [from input]
+
+---
+
 ### cNode: [Method/Process Name from Input]
 **Type:** `praxis`
 **Source:** input
 **Mode:** [generation / inquisition / combined] - [from input]
 
 **Content:**
-- **Method**: [method from input]
-- **Process**: [process from input]
-- **Inquiry**: [inquiry from input]
+- **Method**: [method from input, or inferred method that implements cAtoms]
+- **Process**: [process from input, or inferred process that operationalizes cAtoms]
+- **Inquiry**: [inquiry from input, or inferred inquiry that tests cAtoms]
+- **Grounded in**: [If inferred, list the specific cAtoms this method implements/tests - e.g., "Implements cAtom 1, 5, 22" or "Tests cAtom 8-11"]
 
 **cElement Properties:**
 - **State**: [Extract from input: specific state description for THIS method - e.g., "Highly dynamic, adapts to context", "Stable, well-established", etc.]

@@ -205,19 +205,16 @@
             </div>
             <div class="automation-engine-selection" style="padding: 20px; border-top: 1px solid #404040;">
                 <h3 style="margin-top: 0; margin-bottom: 12px;">Automation Engine</h3>
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <label style="display: flex; align-items: center; cursor: pointer;">
-                        <input type="radio" id="automation-engine-file-watching" name="automation-engine" value="file-watching" checked style="margin-right: 8px;">
-                        <span>File Watching (Traditional)</span>
-                    </label>
-                    <label style="display: flex; align-items: center; cursor: pointer;">
-                        <input type="radio" id="automation-engine-cursor-cli" name="automation-engine" value="cursor-cli" style="margin-right: 8px;">
-                        <span>Cursor CLI (Sequential)</span>
-                    </label>
-                    <label style="display: flex; align-items: center; cursor: pointer;">
-                        <input type="radio" id="automation-engine-multi-agent" name="automation-engine" value="multi-agent" style="margin-right: 8px;">
-                        <span>Multi-Agent (Parallel with Quality Gates)</span>
-                    </label>
+                <div id="automation-engine-options" style="display: flex; flex-direction: row; gap: 8px;">
+                    <div class="automation-engine-option selected" data-engine="file-watching">
+                        <span style="font-size: 14px; color: #ffffff;">File Watching (Traditional)</span>
+                    </div>
+                    <div class="automation-engine-option" data-engine="cursor-cli">
+                        <span style="font-size: 14px; color: #ffffff;">Cursor CLI (Sequential)</span>
+                    </div>
+                    <div class="automation-engine-option" data-engine="multi-agent">
+                        <span style="font-size: 14px; color: #ffffff;">Multi-Agent (Parallel with Quality Gates)</span>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">

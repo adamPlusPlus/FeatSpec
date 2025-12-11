@@ -3676,14 +3676,24 @@ class PromptSpecApp {
                     });
                 });
                 
+                // Handle automation engine selection
+                let selectedEngine = 'file-watching'; // Default
+                const engineOptions = document.querySelectorAll('.automation-engine-option');
+                engineOptions.forEach(option => {
+                    option.addEventListener('click', () => {
+                        engineOptions.forEach(opt => {
+                            opt.classList.remove('selected');
+                        });
+                        option.classList.add('selected');
+                        selectedEngine = option.dataset.engine;
+                    });
+                });
+                
                 // Handle confirm
                 const handleConfirm = () => {
                     if (selectedCase) {
-                        // Get selected automation engine
-                        const engineRadio = document.querySelector('input[name="automation-engine"]:checked');
-                        const automationEngine = engineRadio ? engineRadio.value : 'file-watching';
                         modal.style.display = 'none';
-                        resolve({ caseNumber: selectedCase, automationEngine: automationEngine });
+                        resolve({ caseNumber: selectedCase, automationEngine: selectedEngine });
                     }
                 };
                 

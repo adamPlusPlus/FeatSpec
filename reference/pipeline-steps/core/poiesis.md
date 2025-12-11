@@ -28,6 +28,16 @@
 
 **CRITICAL**: Your task is to **IDENTIFY and ARTICULATE** the poiesis (creative expression, generative structure) that **already exists** in the input, not to create a new poiesis. The poiesis is already present in the input—you must reveal it, not invent it.
 
+**CRITICAL - Context Integration**: 
+- **Previous Steps Available**: All previously established cAtoms, ccompounds (compound structures), and cElements from previous steps (Theoria, Praxis, Doctrine, Poiesis) are available in the conversation history
+- **You MUST consider**: All cAtoms, ccompounds, and cElements from previous steps when analyzing the current input
+- **Fresh Input**: The input field contains NEW input specific to this step that should be processed
+- **Integration**: Your analysis should integrate both:
+  1. Previously established foundations (cAtoms, ccompounds, cElements) from conversation history
+  2. Fresh input provided in the current step's input field
+- **Reference Previous**: When extracting poiesis cNodes, reference and build upon cAtoms, ccompounds, and cElements from previous steps
+- **Build Upon**: Your poiesis should build upon the axiomatic foundations (cAtoms) and structures (ccompounds, cElements) already established
+
 ---
 
 ## File Watching Instructions
@@ -59,13 +69,13 @@
 
 **Poiesis Tasks:**
 
-**CRITICAL INSTRUCTION**: Your output must be **cNodes and cElements**, not summaries or explanations. Extract the actual poiesis cNodes from the input using **direct quotes and minimal interpretation**. Do NOT explain what poiesis is. Do NOT interpret or summarize. Do NOT add explanatory text. Extract ONLY what exists in the input.
+**CRITICAL INSTRUCTION**: Your output must be **cNodes and cElements**, not summaries or explanations. Extract the actual poiesis cNodes from the input. Do NOT explain what poiesis is. Do NOT invent content that doesn't exist in the input. Extract what exists in the input, using direct quotes when available, or extracting the essential content when the meaning is clear but wording differs.
 
-1. **Extract Poiesis cNodes** (directly from the input)
+1. **Extract Poiesis cNodes** (from the input)
    - Identify each distinct creative expression, output, or generative structure **as a separate cNode**
    - Label each cNode with its type: `poiesis`
-   - Extract generative impulse **as direct quotes or minimal paraphrases from input** - NO interpretation
-   - Extract expression form, content, style, symbolic load **as direct quotes from input** - NO explanation
+   - Extract generative impulse **from input** - use direct quotes when available, otherwise extract the essential generative impulse content
+   - Extract expression form, content, style, symbolic load **from input** - extract what forms, content, styles, and symbolic loads are described
 
 2. **Extract Expression cNodes** (from the input)
    - Identify form **as form cNodes** (type: `form`)
@@ -88,18 +98,39 @@
    - Identify ecstasis potential **as ecstasis cNodes** (type: `ecstasis`)
    - Identify expression mutation **as mutation cNodes** (type: `expression-mutation`)
 
-5. **Apply cElement Properties** (verbatim from reference document)
-   - For each poiesis cNode, apply cElement properties **verbatim from the reference document definitions**:
-     - **Function**: "Externalizes internal logic or meaning into communicable, perceptible form" [from reference - Expression cElement]
-     - **State**: [Mutable and polyformic] - [from reference: "Mutable and polyformic; surface-bound but symbolically loaded"]
+5. **Extract Instance-Specific cElement Properties** (from input only)
+   - For each poiesis cNode, extract instance-specific properties **directly from the input**:
+     - **State**: [Extract from input: Mutable/Stable/Adaptive/Polyformic/etc. - describe the actual state of THIS specific expression]
      - **Trace Behavior**:
-       - **Visibility**: [High] - [from "direct quote from input" or reference: "Leaves the most visible trace, but often the least structurally essential"]
-       - **Mutation Rate**: [High/Medium/Low] - [from "direct quote from input" or reference]
-       - **CRITICAL**: NO interpretive reasoning like "[suggesting X]" or "[as Y]" - ONLY direct quotes in brackets
-     - **Affinity Bonds**: [Strong/Medium/Weak with X, Y, Z] - [from input relationships or reference: "Strong with Design, Poiesis, Techne, and Foam; loosely coupled with Doctrine"]
-     - **Ecstasis Role**: "Can act as signal amplifier or rupture trigger via symbolic disruption" [from reference - Expression cElement]
-     - **Prestige Role**: [High/Medium/Low] - [from input or reference: "High in cultural/symbolic economies"]
-     - **Epistemic Role**: "Shifts accessibility, transmission, and adoption of underlying concepts" [from reference - Expression cElement]
+       - **Visibility**: [Extract from input: High/Medium/Low - how visible is THIS specific expression's trace?]
+       - **Mutation Rate**: [Extract from input: High/Medium/Low - how quickly does THIS specific expression mutate?]
+       - **Stability**: [Extract from input if present - how stable is THIS specific expression?]
+       - **CRITICAL**: Extract actual behavior patterns from input. If not present in input, OMIT rather than using defaults.
+     - **Affinity Bonds**: [Extract from input: Strong/Medium/Weak with specific cElements/cNodes - what does THIS expression actually bond with?]
+     - **Prestige Role**: [Extract from input: High/Medium/Low - what prestige does THIS specific expression carry?]
+   - **DO NOT** include static type-level properties (Function, Epistemic Role, Ecstasis Role) - these are redundant with the cNode type.
+   - **DO** provide rich, specific details about THIS particular instance extracted from the input.
+
+6. **Extract Cross-Type Interactions and Derivations** (from input)
+   - **Interactions**: Identify how THIS poiesis cNode interacts with other cElement types (Theoria, Praxis, Doctrine, Techne, Design, Foam):
+     - **With Theoria**: [How does THIS expression interact with theoric orientations? Does it amplify, challenge, or transform them?]
+     - **With Praxis**: [How does THIS expression interact with methods? Does it channel through praxis or resist it?]
+     - **With Doctrine**: [How does THIS expression interact with rules/constraints? Does it work within, against, or transform doctrine?]
+     - **With Techne**: [How does THIS expression interact with tools/processes? Does it become techne or use techne?]
+     - **With Design**: [How does THIS expression interact with functional forms? Does it inform design or emerge from it?]
+   - **Derivations**: Identify what THIS poiesis cNode generates or transforms into:
+     - **Generates**: [What new cNodes, Bodies, or structures does THIS expression create?]
+     - **Transforms into**: [Does THIS expression stabilize into Doctrine? Become Techne? Feed into Design?]
+     - **Becomes**: [What does THIS expression become when it crystallizes or mutates?]
+   - **Hybridizations**: Identify creative combinations ("idea sex") where THIS poiesis cNode combines with other types:
+     - **Hybrid Forms**: [What emerges when THIS expression combines with Theoria/Praxis/Doctrine/etc.?]
+     - **Emergent Properties**: [What new properties, behaviors, or structures emerge from these combinations?]
+     - **Creative Recombination**: [How does THIS expression recombine with other elements to create novel forms?]
+   - **Interaction Dynamics**: Extract the actual dynamics from input:
+     - **Amplification**: [Does THIS expression amplify other cNodes? How?]
+     - **Transformation**: [Does THIS expression transform other cNodes? Into what?]
+     - **Resistance**: [Does THIS expression resist or challenge other cNodes? How?]
+     - **Catalysis**: [Does THIS expression catalyze interactions between other cNodes?]
 
 **Output Format:**
 
@@ -117,19 +148,40 @@
 - **Generative Striving**: [striving from input]
 
 **cElement Properties:**
-- **Function**: "Externalizes internal logic or meaning into communicable, perceptible form" [from reference - Expression cElement]
-- **State**: [Mutable and polyformic] - [from reference: "Mutable and polyformic; surface-bound but symbolically loaded"]
+- **State**: [Extract from input: specific state description for THIS expression - e.g., "Highly mutable, adapts to audience context", "Stable symbolic form", etc.]
 - **Trace Behavior**:
-  - **Visibility**: [High] - [from "direct quote from input" or reference: "Leaves the most visible trace, but often the least structurally essential"]
-  - **Mutation Rate**: [High/Medium/Low] - [from "direct quote from input" or reference]
-  - **CRITICAL**: NO interpretive reasoning like "[suggesting X]" or "[as Y]" - ONLY direct quotes in brackets
-- **Affinity Bonds**: [Strong/Medium/Weak with X, Y, Z] - [from input relationships or reference: "Strong with Design, Poiesis, Techne, and Foam; loosely coupled with Doctrine"]
-- **Ecstasis Role**: "Can act as signal amplifier or rupture trigger via symbolic disruption" [from reference - Expression cElement]
-- **Prestige Role**: [High/Medium/Low] - [from input or reference: "High in cultural/symbolic economies"]
-- **Epistemic Role**: "Shifts accessibility, transmission, and adoption of underlying concepts" [from reference - Expression cElement]
+  - **Visibility**: [Extract from input: High/Medium/Low - specific visibility characteristics of THIS expression]
+  - **Mutation Rate**: [Extract from input: High/Medium/Low - specific mutation rate of THIS expression]
+  - **Stability**: [Extract from input if present - specific stability characteristics]
+  - **Other behaviors**: [Extract any other trace behaviors specific to THIS expression from input]
+- **Affinity Bonds**: [Extract from input: specific bonds THIS expression forms - e.g., "Strong with [specific cNode X], weak with [specific cNode Y]"]
+- **Prestige Role**: [Extract from input: High/Medium/Low - specific prestige characteristics of THIS expression]
 
 **Generates:**
 - [cNode/Body structures from input]
+
+**Cross-Type Interactions:**
+- **With Theoria**: [How THIS expression interacts with theoric orientations - amplify, challenge, transform?]
+- **With Praxis**: [How THIS expression interacts with methods - channel through or resist?]
+- **With Doctrine**: [How THIS expression interacts with rules - work within, against, or transform?]
+- **With Techne**: [How THIS expression interacts with tools - becomes techne or uses techne?]
+- **With Design**: [How THIS expression interacts with functional forms - informs or emerges from?]
+
+**Derivations:**
+- **Generates**: [What new cNodes, Bodies, or structures does THIS expression create?]
+- **Transforms into**: [Does THIS expression stabilize into Doctrine? Become Techne? Feed into Design?]
+- **Becomes**: [What does THIS expression become when it crystallizes or mutates?]
+
+**Hybridizations:**
+- **Hybrid Forms**: [What emerges when THIS expression combines with other cElement types?]
+- **Emergent Properties**: [What new properties, behaviors, or structures emerge from these combinations?]
+- **Creative Recombination**: [How does THIS expression recombine with other elements to create novel forms?]
+
+**Interaction Dynamics:**
+- **Amplification**: [Does THIS expression amplify other cNodes? How?]
+- **Transformation**: [Does THIS expression transform other cNodes? Into what?]
+- **Resistance**: [Does THIS expression resist or challenge other cNodes? How?]
+- **Catalysis**: [Does THIS expression catalyze interactions between other cNodes?]
 
 ---
 

@@ -332,7 +332,13 @@ class MultiAgentAutomationSystem {
                 const input = await this.getSectionInput(projectId, section);
                 
                 // Combine prompt + input
-                fullPrompt = `${enhancedPrompt}\n\n## Input\n\n${input}`;
+                // Note: Input field contains NEW input for this step
+                // Previous outputs (cAtoms, ccompounds, cElements) are available in conversation history
+                if (input && input.trim()) {
+                    fullPrompt = `${enhancedPrompt}\n\n## Fresh Input for This Step\n\n${input}\n\n**Note**: Process this fresh input in context of all previously established cAtoms, ccompounds, and cElements from previous steps (available in conversation history).`;
+                } else {
+                    fullPrompt = enhancedPrompt;
+                }
             }
             
             // Get scope directory from project (per-project, not global)
@@ -730,12 +736,28 @@ Please refine the output to incorporate the synthesis feedback above. Generate a
         
         let enhancedPrompt = basePrompt;
         
-        // Add context summary
-        if (context.previousOutputs && context.previousOutputs.length > 0) {
+        // Add context summary (only if not using conversation memory)
+        // If LLM has conversation memory and scope, previous outputs are available in the conversation
+        // Only include them explicitly if needed for single-shot prompts or when conversation memory is disabled
+        const useConversationMemory = project?.useConversationMemory !== false; // Default to true
+        if (!useConversationMemory && context.previousOutputs && context.previousOutputs.length > 0) {
             enhancedPrompt += `\n\n## Context from Previous Steps\n\n`;
+            enhancedPrompt += `(Note: If you have conversation memory, you can reference previous steps from the conversation history)\n\n`;
             for (const prevOutput of context.previousOutputs) {
                 enhancedPrompt += `### ${prevOutput.sectionName}\n${prevOutput.output}\n\n`;
             }
+        } else if (useConversationMemory && context.previousOutputs && context.previousOutputs.length > 0) {
+            // Just reference them, don't paste the full content
+            enhancedPrompt += `\n\n## Previous Steps Available in Conversation\n\n`;
+            enhancedPrompt += `The following previous steps are available in the conversation history:\n`;
+            for (const prevOutput of context.previousOutputs) {
+                enhancedPrompt += `- ${prevOutput.sectionName}\n`;
+            }
+            enhancedPrompt += `\n**CRITICAL**: You MUST consider all previously established cAtoms, ccompounds (compound structures), and cElements from these previous steps when analyzing the current input.\n`;
+            enhancedPrompt += `- Reference cAtoms, ccompounds, and cElements from previous steps\n`;
+            enhancedPrompt += `- Build upon the axiomatic foundations and structures already established\n`;
+            enhancedPrompt += `- Integrate previous outputs with the fresh input provided in the current step\n`;
+            enhancedPrompt += `- The input field contains NEW input specific to this step - process it in context of previous steps\n`;
         }
         
         // Add quality feedback from previous attempts (if any)

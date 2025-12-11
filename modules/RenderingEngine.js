@@ -257,12 +257,15 @@ class RenderingEngine {
         const isTextareaFocused = activeElement && activeElement.tagName === 'TEXTAREA' && (
             activeElement.classList.contains('section-input') ||
             activeElement.classList.contains('section-output') ||
-            activeElement.classList.contains('section-notes')
+            activeElement.classList.contains('section-notes') ||
+            activeElement.classList.contains('section-override-instructions')
         );
         const textareaType = isTextareaFocused ? 
             (activeElement.classList.contains('section-input') ? 'input' :
-             activeElement.classList.contains('section-output') ? 'output' : 'notes') : null;
+             activeElement.classList.contains('section-output') ? 'output' :
+             activeElement.classList.contains('section-override-instructions') ? 'override-instructions' : 'notes') : null;
         const cursorPosition = isTextareaFocused ? activeElement.selectionStart : null;
+        const textareaScrollTop = isTextareaFocused ? activeElement.scrollTop : null;
         const textareaSectionId = isTextareaFocused ? activeElement.dataset.sectionId : null;
         
         sectionView.innerHTML = this.renderSectionContent(activeProject, section);
@@ -292,6 +295,11 @@ class RenderingEngine {
                 if (newTextarea) {
                     // Use setTimeout to ensure the textarea is fully rendered
                     setTimeout(() => {
+                        // Restore textarea scroll position first
+                        if (textareaScrollTop !== null && textareaScrollTop >= 0) {
+                            newTextarea.scrollTop = textareaScrollTop;
+                        }
+                        // Then restore focus and cursor position
                         newTextarea.focus();
                         if (cursorPosition !== null && cursorPosition <= newTextarea.value.length) {
                             newTextarea.setSelectionRange(cursorPosition, cursorPosition);
@@ -499,6 +507,18 @@ class RenderingEngine {
                             <button class="btn-copy" onclick="app.copyPromptWithInput('${project.id}', '${section.sectionId}')">Copy Prompt + Input</button>
                         </div>
                     </div>
+                    
+                    ${(section.modifiers || []).includes('override-instructions') ? `
+                    <div class="section-panel override-instructions-panel" data-project-id="${project.id}" data-section-id="${section.sectionId}">
+                        <div class="panel-header">
+                            <h3>Override Instructions</h3>
+                            <button class="btn-collapse" onclick="this.parentElement.nextElementSibling.classList.toggle('collapsed'); this.textContent = this.parentElement.nextElementSibling.classList.contains('collapsed') ? '▶' : '▼';">▼</button>
+                        </div>
+                        <div class="panel-content">
+                            <textarea class="section-override-instructions" data-project-id="${project.id}" data-section-id="${section.sectionId}" placeholder="Enter override instructions that will be included in the copied prompt...">${this.escapeHtml(section.overrideInstructions || '')}</textarea>
+                        </div>
+                    </div>
+                    ` : ''}
                     
                     <div class="section-panel input-panel" data-project-id="${project.id}" data-section-id="${section.sectionId}">
                         <div class="panel-header">

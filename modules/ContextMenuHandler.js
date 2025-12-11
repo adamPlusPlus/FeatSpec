@@ -58,14 +58,18 @@ class ContextMenuHandler {
                 timeSinceLastClick > 0 && 
                 sameTarget) {
                 // Double-click detected - create synthetic contextmenu event
-                const syntheticEvent = new MouseEvent('contextmenu', {
+                // Create a custom event-like object since Event.target is read-only
+                const syntheticEvent = {
+                    type: 'contextmenu',
                     bubbles: true,
                     cancelable: true,
                     clientX: e.clientX,
                     clientY: e.clientY,
-                    button: 2 // Right button
-                });
-                syntheticEvent.target = e.target;
+                    button: 2, // Right button
+                    target: e.target,
+                    preventDefault: () => {},
+                    stopPropagation: () => {}
+                };
                 this.handleContextMenu(syntheticEvent);
                 this.lastLeftClickTime = 0;
                 this.lastLeftClickTarget = null;

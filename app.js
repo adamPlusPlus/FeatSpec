@@ -738,6 +738,39 @@ class PromptSpecApp {
             console.error('Load file button not found!');
         }
         
+        // Reload templates button
+        const reloadTemplatesBtn = document.getElementById('reload-templates');
+        if (reloadTemplatesBtn) {
+            reloadTemplatesBtn.addEventListener('click', async (e) => {
+                e.stopPropagation(); // Prevent dropdown close
+                console.log('Reload templates button clicked');
+                
+                // Close dropdown first
+                const dropdownMenu = document.querySelector('.dropdown-menu');
+                const dropdownToggle = document.querySelector('.dropdown-toggle');
+                if (dropdownMenu) dropdownMenu.classList.remove('active');
+                if (dropdownToggle) dropdownToggle.classList.remove('active');
+                
+                // Reload templates
+                try {
+                    if (window.PromptLoader) {
+                        await window.PromptLoader.reload();
+                        // Reload prompts for all existing projects
+                        const state = this.stateManager.getState();
+                        for (const project of state.projects) {
+                            await this.loadPromptsForProject(project.id);
+                        }
+                        alert('Templates reloaded successfully!');
+                    } else {
+                        alert('PromptLoader not available');
+                    }
+                } catch (error) {
+                    console.error('Error reloading templates:', error);
+                    alert('Failed to reload templates: ' + error.message);
+                }
+            });
+        }
+        
         // Settings
         const settingsBtn = document.getElementById('settings-btn');
         if (settingsBtn) {
@@ -1035,6 +1068,10 @@ class PromptSpecApp {
                 const projectId = e.target.dataset.projectId;
                 const sectionId = e.target.dataset.sectionId;
                 this.handleSectionNotesChange(projectId, sectionId, e.target.value);
+            } else if (e.target.classList.contains('section-override-instructions')) {
+                const projectId = e.target.dataset.projectId;
+                const sectionId = e.target.dataset.sectionId;
+                this.handleSectionOverrideInstructionsChange(projectId, sectionId, e.target.value);
             }
         });
         
@@ -2810,9 +2847,11 @@ class PromptSpecApp {
                     // This handles cases where prompts were loaded before this feature was added
                     this.stateManager.updateSection(projectId, section.sectionId, { prompt });
                     
-                    if (prompt.length !== originalLength) {
-                        console.log(`Removed Input Guidance from ${section.sectionId}: ${originalLength - prompt.length} chars`);
-                    }
+                    // Log removed input guidance only in debug mode (suppress normal console output)
+                    // Uncomment the line below if you need to debug input guidance removal
+                    // if (prompt.length !== originalLength) {
+                    //     console.log(`Removed Input Guidance from ${section.sectionId}: ${originalLength - prompt.length} chars`);
+                    // }
                 }
             } catch (error) {
                 console.warn(`Failed to load prompt for section ${section.sectionId}:`, error);
@@ -2977,6 +3016,8 @@ class PromptSpecApp {
                             prompt = prompt.replace(/{PREVIOUS_OUTPUT}/g, section.input);
                         } else {
                             // If no placeholder exists, append input at the end with a clear separator
+                            // Note: This is the NEW input for this step, not previous outputs
+                            // Previous outputs are available in conversation memory if enabled
                             prompt += '\n\n---\n\n## Input\n\n' + section.input;
                         }
                     }
@@ -3025,8 +3066,25 @@ class PromptSpecApp {
             return false;
         }
         
-        // Use the prompt with input already substituted
-        let textToCopy = prompt;
+        // Build the text to copy, starting with explicit instructions and override instructions if present
+        let textToCopy = '';
+        
+        // Check if override instructions are present (when override-instructions modifier is active)
+        const hasOverrideInstructions = (section.modifiers || []).includes('override-instructions') && 
+                                       section.overrideInstructions && 
+                                       section.overrideInstructions.trim();
+        
+        if (hasOverrideInstructions) {
+            // Add explicit instructions that precede override instructions (not visible to user in UI)
+            textToCopy += 'IMPORTANT: The following override instructions take precedence over the standard prompt template. Apply these instructions first, then proceed with the standard prompt.\n\n';
+            textToCopy += '---\n\n';
+            textToCopy += '## Override Instructions\n\n';
+            textToCopy += section.overrideInstructions.trim();
+            textToCopy += '\n\n---\n\n';
+        }
+        
+        // Add the prompt with input already substituted
+        textToCopy += prompt;
         
         // Copy to clipboard
         try {
@@ -3552,6 +3610,13 @@ class PromptSpecApp {
     handleSectionNotesChange(projectId, sectionId, value) {
         this.stateManager.updateSection(projectId, sectionId, {
             notes: value
+        });
+    }
+    
+    // Handle section override instructions change
+    handleSectionOverrideInstructionsChange(projectId, sectionId, value) {
+        this.stateManager.updateSection(projectId, sectionId, {
+            overrideInstructions: value
         });
     }
     

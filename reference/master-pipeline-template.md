@@ -74,7 +74,9 @@ feat-spec/reference/
 │   ├── process-steps/
 │   │   ├── validation-loop.md
 │   │   ├── refinement-loop.md
-│   │   └── integration-loop.md
+│   │   ├── integration-loop.md
+│   │   ├── catom-refinement.md
+│   │   └── catom-generation.md
 │   ├── inference/
 │   │   ├── data-model-inference.md
 │   │   ├── state-machine-inference.md
@@ -169,6 +171,18 @@ All cases share these core steps (with different modifiers):
 - **When**: When combining outputs from multiple sources/cases
 - **Purpose**: Resolve conflicts and integrate information
 - **File**: `process-steps/integration-loop.md`
+
+### cAtom Refinement
+- **When**: After Theoria step when cAtoms are extracted, or when cAtoms need clarification
+- **Purpose**: Collaboratively refine and interpret cAtoms with the user
+- **File**: `process-steps/catom-refinement.md`
+- **Collaboration**: LLM presents findings → User provides feedback → LLM refines
+
+### cAtom Generation
+- **When**: When cAtoms interact or ccompounds break down, revealing new foundations
+- **Purpose**: Create new cAtoms from cAtom collisions or ccompound decouplings
+- **File**: `process-steps/catom-generation.md`
+- **Collaboration**: LLM identifies opportunities → User validates/guides → LLM generates
 
 ---
 

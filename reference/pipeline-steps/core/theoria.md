@@ -28,6 +28,14 @@
 
 **CRITICAL**: Your task is to **IDENTIFY and ARTICULATE** the pre-conceptual frame that **already underlies** the input, not to create a new theoria. The theoria is already present in the input—you must reveal it, not invent it.
 
+**CRITICAL - Context Integration** (for subsequent Theoria steps):
+- **Previous Steps Available**: All previously established cAtoms, ccompounds (compound structures), and cElements from previous steps are available in the conversation history
+- **You MUST consider**: All cAtoms, ccompounds, and cElements from previous steps when analyzing the current input
+- **Fresh Input**: The input field contains NEW input specific to this step that should be processed
+- **Integration**: Your analysis should integrate both:
+  1. Previously established foundations (cAtoms, ccompounds, cElements) from conversation history
+  2. Fresh input provided in the current step's input field
+
 ---
 
 ## File Watching Instructions
@@ -59,19 +67,26 @@
 
 **Theoria Tasks:**
 
-**CRITICAL INSTRUCTION**: Your output must be **cNodes and cElements**, not summaries or explanations. Extract the actual theoria cNodes from the input using **direct quotes and minimal interpretation**. Do NOT explain what theoria is. Do NOT interpret or summarize. Do NOT add explanatory text. Extract ONLY what exists in the input.
+**CRITICAL INSTRUCTION**: Your output must be **cNodes and cElements**, not summaries or explanations. Extract the actual theoria cNodes from the input. Do NOT explain what theoria is. Do NOT invent content that doesn't exist in the input. Extract what exists in the input, using direct quotes when available, or extracting the essential content when the meaning is clear but wording differs.
 
-1. **Extract Theoria cNodes** (directly from the input)
+1. **Extract Theoria cNodes** (from the input)
    - Identify each distinct theoric orientation, assumption, or frame **as a separate cNode**
    - Label each cNode with its type: `theoria`
-   - Extract sighting, posture, or frame **as direct quotes or minimal paraphrases from input** - NO interpretation
-   - Extract epistemic mode and episteme **as direct quotes from input ONLY** - if not present as explicit quotes, OMIT this section - NO interpretation, NO summarization
-   - Extract ontological assumptions **as direct quotes from input** - NO interpretation
+   - Extract sighting, posture, or frame **from input** - use direct quotes when available, otherwise extract the essential orientation content
+   - Extract epistemic mode and episteme **from input** - extract if present, otherwise OMIT this section
+   - Extract ontological assumptions **from input** - extract what ontological assumptions are described
 
 2. **Extract cAtoms** (from the input)
-   - Identify each axiomatic foundation **as a cAtom**
+   - Identify statements that **function as axiomatic foundations** — these are non-negotiable assumptions, structural premises, or foundational claims that anchor other structures
+   - Look for:
+     - Explicit axiomatic language ("X is foundational", "X must", "there is no excuse", "should always", "states", etc.)
+     - **AND** implicit axiomatic foundations — statements that function as non-negotiable premises even if not explicitly labeled as such
+     - Strong assertions that serve as structural assumptions
+     - Claims that other statements depend upon or presuppose
+     - Non-derivable premises that ground the reasoning
    - Label each cAtom with its type: `cAtom`
-   - Extract what each cAtom anchors **as cAtom properties**
+   - Extract what each cAtom anchors **as cAtom properties** — what structures, claims, or reasoning depend on this foundation
+   - **CRITICAL**: Extract cAtoms based on their **functional role** as axiomatic foundations, not just explicit axiomatic language. If a statement serves as a foundational premise that other content depends upon, it qualifies as a cAtom.
 
 3. **Extract Possibility Space cNodes** (from the input)
    - Identify askable questions **as cNodes** (type: `question-askable`)
@@ -86,18 +101,40 @@
    - Identify contradictions **as contradiction cNodes** (type: `contradiction`)
    - Identify ecstasis potential **as ecstasis cNodes** (type: `ecstasis`)
 
-5. **Apply cElement Properties** (verbatim from reference document)
-   - For each theoria cNode, apply cElement properties **verbatim from the reference document definitions**:
-     - **Function**: "Provides a pre-conceptual lens through which meaning is framed" [from reference]
-     - **State**: [Persistent/Latent/Active] - [from input, or "Persistent" if from reference]
+5. **Extract Instance-Specific cElement Properties** (from input only)
+   - For each theoria cNode, extract instance-specific properties **directly from the input**:
+     - **State**: [Extract from input: Persistent/Latent/Active/etc. - describe the actual state of THIS specific orientation]
      - **Trace Behavior**:
-       - **Mutation Rate**: [Low/Medium/High] - [from "direct quote from input" or reference: "Low mutation rate"]
-       - **Stability**: [High/Medium/Low] - [from "direct quote from input" or reference]
-       - **CRITICAL**: NO interpretive reasoning like "[suggesting X]" or "[as Y]" - ONLY direct quotes in brackets
-     - **Affinity Bonds**: [Strong/Medium/Weak with X, Y, Z] - [from input relationships or reference: "Strong with Doctrine, Poiesis, Metaphysic; weak with Foam and Design"]
-     - **Ecstasis Role**: "Trigger or boundary" - [from reference: "Trigger or boundary for major philosophical reconfigurations"]
-     - **Prestige Role**: [High/Medium/Low] - [from input or reference: "Often prestige-generating"]
-     - **Epistemic Role**: "Distinguishes what can be known from what is even askable" [from reference]
+       - **Mutation Rate**: [Extract from input: Low/Medium/High - how quickly does THIS specific orientation mutate?]
+       - **Stability**: [Extract from input: High/Medium/Low - how stable is THIS specific orientation?]
+       - **Formation Rate**: [Extract from input if present - how quickly does THIS orientation form or fragment?]
+       - **CRITICAL**: Extract actual behavior patterns from input. If not present in input, OMIT rather than using defaults.
+     - **Affinity Bonds**: [Extract from input: Strong/Medium/Weak with specific cElements/cNodes - what does THIS orientation actually bond with?]
+     - **Prestige Role**: [Extract from input: High/Medium/Low - what prestige does THIS specific orientation carry?]
+   - **DO NOT** include static type-level properties (Function, Epistemic Role, Ecstasis Role) - these are redundant with the cNode type.
+   - **DO** provide rich, specific details about THIS particular instance extracted from the input.
+
+6. **Extract Cross-Type Interactions and Derivations** (from input)
+   - **Interactions**: Identify how THIS theoria cNode interacts with other cElement types (Praxis, Doctrine, Poiesis, Techne, Design, Foam):
+     - **With Praxis**: [How does THIS orientation interact with methods? Does praxis test, instantiate, or challenge it?]
+     - **With Doctrine**: [How does THIS orientation interact with rules? Does it inform doctrine or get constrained by it?]
+     - **With Poiesis**: [How does THIS orientation interact with creative expression? Does it limit or unleash poiesis?]
+     - **With Techne**: [How does THIS orientation interact with tools? Does it guide techne or emerge from it?]
+     - **With Design**: [How does THIS orientation interact with functional forms? Does it frame design or get expressed through it?]
+   - **Derivations**: Identify what THIS theoria cNode generates or transforms into:
+     - **Frames**: [What does THIS orientation frame or make possible?]
+     - **Presupposes**: [What does THIS orientation presuppose or require?]
+     - **Enables**: [What does THIS orientation enable or make askable?]
+     - **Transforms into**: [Does THIS orientation crystallize into Doctrine? Become Praxis? Feed into Poiesis?]
+   - **Hybridizations**: Identify creative combinations where THIS theoria cNode combines with other types:
+     - **Hybrid Frames**: [What emerges when THIS orientation combines with Praxis/Doctrine/Poiesis/etc.?]
+     - **Emergent Possibilities**: [What new possibility spaces open when THIS orientation hybridizes?]
+     - **Creative Recombination**: [How does THIS orientation recombine with other elements to create novel frames?]
+   - **Interaction Dynamics**: Extract the actual dynamics from input:
+     - **Framing**: [How does THIS orientation frame other cNodes? What becomes visible/invisible?]
+     - **Constraint**: [How does THIS orientation constrain what can be known or asked?]
+     - **Enabling**: [How does THIS orientation enable new questions or possibilities?]
+     - **Triggering**: [Does THIS orientation trigger ecstasis or rupture? How?]
 
 **Output Format:**
 
@@ -109,25 +146,47 @@
 **Source:** input
 
 **Content:**
-- **Sighting**: [direct quote or minimal extraction from input - NO interpretation]
-- **Posture**: [direct quote or minimal extraction from input - NO interpretation]
-- **Frame**: [direct quote or minimal extraction from input - NO interpretation]
+- **Sighting**: [extract from input - the sighting/orientation described]
+- **Posture**: [extract from input - the posture/position described]
+- **Frame**: [extract from input - the frame/lens described]
 
 **Epistemic Properties:**
-- **Mode**: [direct quote from input ONLY - if not present as explicit quote, OMIT - NO interpretation, NO summarization]
-- **Episteme**: [direct quote from input ONLY - if not present as explicit quote, OMIT - NO interpretation, NO summarization]
+- **Mode**: [extract from input if present - the epistemic mode described, otherwise OMIT]
+- **Episteme**: [extract from input if present - the episteme class described, otherwise OMIT]
 
 **cElement Properties:**
-- **Function**: "Provides a pre-conceptual lens through which meaning is framed" [from reference]
-- **State**: [Persistent/Latent/Active] - [from input or reference]
+- **State**: [Extract from input: specific state description for THIS orientation - e.g., "Persistent across transformations", "Latent, activated under pressure", etc.]
 - **Trace Behavior**:
-  - **Mutation Rate**: [Low/Medium/High] - [from "direct quote from input" or reference: "Low mutation rate"]
-  - **Stability**: [High/Medium/Low] - [from "direct quote from input" or reference]
-  - **CRITICAL**: NO interpretive reasoning like "[suggesting X]" or "[as Y]" - ONLY direct quotes in brackets
-- **Affinity Bonds**: [Strong/Medium/Weak with X, Y, Z] - [from input relationships or reference]
-- **Ecstasis Role**: "Trigger or boundary" - [from reference: "Trigger or boundary for major philosophical reconfigurations"]
-- **Prestige Role**: [High/Medium/Low] - [from input or reference]
-- **Epistemic Role**: "Distinguishes what can be known from what is even askable" [from reference]
+  - **Mutation Rate**: [Extract from input: Low/Medium/High - specific mutation rate of THIS orientation]
+  - **Stability**: [Extract from input: High/Medium/Low - specific stability characteristics]
+  - **Formation Rate**: [Extract from input if present - how quickly THIS orientation forms or fragments]
+  - **Other behaviors**: [Extract any other trace behaviors specific to THIS orientation from input]
+- **Affinity Bonds**: [Extract from input: specific bonds THIS orientation forms - e.g., "Strong with [specific cNode X], weak with [specific cNode Y]"]
+- **Prestige Role**: [Extract from input: High/Medium/Low - specific prestige characteristics of THIS orientation]
+
+**Cross-Type Interactions:**
+- **With Praxis**: [How THIS orientation interacts with methods - test, instantiate, or challenge?]
+- **With Doctrine**: [How THIS orientation interacts with rules - inform or get constrained?]
+- **With Poiesis**: [How THIS orientation interacts with creative expression - limit or unleash?]
+- **With Techne**: [How THIS orientation interacts with tools - guide or emerge from?]
+- **With Design**: [How THIS orientation interacts with functional forms - frame or get expressed through?]
+
+**Derivations:**
+- **Frames**: [What does THIS orientation frame or make possible?]
+- **Presupposes**: [What does THIS orientation presuppose or require?]
+- **Enables**: [What does THIS orientation enable or make askable?]
+- **Transforms into**: [Does THIS orientation crystallize into Doctrine? Become Praxis? Feed into Poiesis?]
+
+**Hybridizations:**
+- **Hybrid Frames**: [What emerges when THIS orientation combines with other cElement types?]
+- **Emergent Possibilities**: [What new possibility spaces open when THIS orientation hybridizes?]
+- **Creative Recombination**: [How does THIS orientation recombine with other elements to create novel frames?]
+
+**Interaction Dynamics:**
+- **Framing**: [How does THIS orientation frame other cNodes? What becomes visible/invisible?]
+- **Constraint**: [How does THIS orientation constrain what can be known or asked?]
+- **Enabling**: [How does THIS orientation enable new questions or possibilities?]
+- **Triggering**: [Does THIS orientation trigger ecstasis or rupture? How?]
 
 **Presupposes:**
 - [cNode/Body/cAtom type] → [assumption from input]
@@ -148,10 +207,16 @@
 **Type:** `cAtom`
 **Source:** input
 
+**Axiomatic Foundation:**
+- [the foundational claim or assumption from input - extract the actual statement that functions as an axiomatic foundation]
+
 **Anchors:**
-- [what it anchors from input]
-- [what it anchors from input]
+- [what structures, claims, or reasoning this cAtom anchors - what depends on this foundation]
+- [what structures, claims, or reasoning this cAtom anchors - what depends on this foundation]
 ...
+
+**Functional Role:**
+- [How does this statement function as an axiomatic foundation? What makes it non-negotiable or foundational?]
 
 ---
 

@@ -1479,7 +1479,8 @@ header h1 {
 
 .section-input,
 .section-output,
-.section-notes {
+.section-notes,
+.section-override-instructions {
     width: 100%;
     min-height: 200px;
     padding: 12px;

@@ -122,6 +122,7 @@ class StateManager {
             dependencies: sectionDef.dependencies || [],
             modifiers: sectionDef.modifiers || [],
             notes: "",
+            overrideInstructions: "", // User-provided override instructions (visible when override-instructions modifier is active)
             isProcessStep: false,
             isInferenceStep: sectionDef.isInferenceStep || false,
             processStepType: null,
@@ -328,6 +329,10 @@ class StateManager {
     getProcessStepDisplayName(processStepType) {
         const names = {
             'validation-loop': 'Validation Loop',
+            'refinement-loop': 'Refinement Loop',
+            'integration-loop': 'Integration Loop',
+            'catom-refinement': 'cAtom Refinement',
+            'catom-generation': 'cAtom Generation',
             'refinement-loop': 'Refinement Loop',
             'integration-loop': 'Integration Loop'
         };

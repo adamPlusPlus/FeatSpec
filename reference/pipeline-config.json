@@ -305,6 +305,16 @@
           "triggers": ["theoria", "praxis", "doctrine", "poiesis"],
           "step": "process-steps/validation-loop.md",
           "required": false
+        },
+        "catom-refinement": {
+          "triggers": ["theoria"],
+          "step": "process-steps/catom-refinement.md",
+          "required": false
+        },
+        "catom-generation": {
+          "triggers": ["theoria", "praxis", "doctrine", "poiesis"],
+          "step": "process-steps/catom-generation.md",
+          "required": false
         }
       }
     },

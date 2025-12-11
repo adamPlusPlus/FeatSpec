@@ -29,6 +29,16 @@
 
 **CRITICAL**: Your task is to **IDENTIFY and ARTICULATE** the praxis (method, process, operation) that **already exists** in the input, not to create a new praxis. The praxis is already present in the input—you must reveal it, not invent it.
 
+**CRITICAL - Context Integration**: 
+- **Previous Steps Available**: All previously established cAtoms, ccompounds (compound structures), and cElements from previous steps (Theoria, Doctrine, Praxis, Poiesis) are available in the conversation history
+- **You MUST consider**: All cAtoms, ccompounds, and cElements from previous steps when analyzing the current input
+- **Fresh Input**: The input field contains NEW input specific to this step that should be processed
+- **Integration**: Your analysis should integrate both:
+  1. Previously established foundations (cAtoms, ccompounds, cElements) from conversation history
+  2. Fresh input provided in the current step's input field
+- **Reference Previous**: When extracting praxis cNodes, reference and build upon cAtoms, ccompounds, and cElements from previous steps
+- **Build Upon**: Your praxis should build upon the axiomatic foundations (cAtoms) and structures (ccompounds, cElements) already established
+
 ---
 
 ## File Watching Instructions
@@ -60,14 +70,14 @@
 
 **Praxis Tasks:**
 
-**CRITICAL INSTRUCTION**: Your output must be **cNodes and cElements**, not summaries or explanations. Extract the actual praxis cNodes from the input using **direct quotes and minimal interpretation**. Do NOT explain what praxis is. Do NOT interpret or summarize. Do NOT add explanatory text. Extract ONLY what exists in the input.
+**CRITICAL INSTRUCTION**: Your output must be **cNodes and cElements**, not summaries or explanations. Extract the actual praxis cNodes from the input. Do NOT explain what praxis is. Do NOT invent content that doesn't exist in the input. Extract what exists in the input, using direct quotes when available, or extracting the essential content when the meaning is clear but wording differs.
 
-1. **Extract Praxis cNodes** (directly from the input)
+1. **Extract Praxis cNodes** (from the input)
    - Identify each distinct method, process, or operation **as a separate cNode**
    - Label each cNode with its type: `praxis`
-   - Determine mode: `generation` or `inquisition` or `combined` - [direct quote from input ONLY]
-   - Extract method/process **as direct quotes or minimal paraphrases from input** - NO interpretation
-   - Extract operations and transformations **as direct quotes from input** - NO explanation
+   - Determine mode: `generation` or `inquisition` or `combined` - [extract from input based on what the method does]
+   - Extract method/process **from input** - use direct quotes when available, otherwise extract the essential method/process content
+   - Extract operations and transformations **from input** - extract what operations and transformations are described
 
 2. **Extract Operational cNodes** (from the input)
    - Identify each cNode operation **as a cNode** (type: `operation`)
@@ -86,18 +96,40 @@
    - Identify ecstasis potential **as ecstasis cNodes** (type: `ecstasis`)
    - Identify trace recursion **as recursion cNodes** (type: `trace-recursion`)
 
-5. **Apply cElement Properties** (verbatim from reference document)
-   - For each praxis cNode, apply cElement properties **verbatim from the reference document definitions**:
-     - **Function**: "Enables structured action and/or epistemic inquiry" [from reference]
-     - **State**: [Highly dynamic/Stable/Adaptive] - [from input or reference: "Highly dynamic"]
+5. **Extract Instance-Specific cElement Properties** (from input only)
+   - For each praxis cNode, extract instance-specific properties **directly from the input**:
+     - **State**: [Extract from input: Highly dynamic/Stable/Adaptive/etc. - describe the actual state of THIS specific method]
      - **Trace Behavior**:
-       - **Self-branching**: [High/Medium/Low] - [from "direct quote from input" or reference: "Self-branching and forking"]
-       - **Mutation Rate**: [High/Medium/Low] - [from "direct quote from input" or reference: "high entropy, prone to recombination"]
-       - **CRITICAL**: NO interpretive reasoning like "[suggesting X]" or "[as Y]" - ONLY direct quotes in brackets
-     - **Affinity Bonds**: [Strong/Medium/Weak with X, Y, Z] - [from input relationships or reference: "Strong with Techne, Poiesis, Design; tightly coupled with Theoria when stable"]
-     - **Ecstasis Role**: "Often the cause of rupture when a method reveals contradiction" [from reference]
-     - **Prestige Role**: [High/Medium/Low] - [from input or reference: "Medium-high"]
-     - **Epistemic Role**: "Central — Praxis defines how we know and what questions we even ask" [from reference]
+       - **Self-branching**: [Extract from input: High/Medium/Low - how much does THIS specific method branch and fork?]
+       - **Mutation Rate**: [Extract from input: High/Medium/Low - how quickly does THIS specific method mutate?]
+       - **Recombination Tendency**: [Extract from input if present - how prone is THIS method to recombination?]
+       - **CRITICAL**: Extract actual behavior patterns from input. If not present in input, OMIT rather than using defaults.
+     - **Affinity Bonds**: [Extract from input: Strong/Medium/Weak with specific cElements/cNodes - what does THIS method actually bond with?]
+     - **Prestige Role**: [Extract from input: High/Medium/Low - what prestige does THIS specific method carry?]
+   - **DO NOT** include static type-level properties (Function, Epistemic Role, Ecstasis Role) - these are redundant with the cNode type.
+   - **DO** provide rich, specific details about THIS particular instance extracted from the input.
+
+6. **Extract Cross-Type Interactions and Derivations** (from input)
+   - **Interactions**: Identify how THIS praxis cNode interacts with other cElement types (Theoria, Doctrine, Poiesis, Techne, Design, Foam):
+     - **With Theoria**: [How does THIS method interact with orientations? Does it test, instantiate, or challenge theoria?]
+     - **With Doctrine**: [How does THIS method interact with rules? Does it challenge, reify, or transform doctrine?]
+     - **With Poiesis**: [How does THIS method interact with creative expression? Does it limit, channel, or unleash poiesis?]
+     - **With Techne**: [How does THIS method interact with tools? Does it become techne when stabilized?]
+     - **With Design**: [How does THIS method interact with functional forms? Does it shape what gets built?]
+   - **Derivations**: Identify what THIS praxis cNode generates or transforms into:
+     - **Generates**: [What new cNodes, claimnodes, or structures does THIS method create?]
+     - **Tests**: [What does THIS method test or falsify?]
+     - **Transforms into**: [Does THIS method stabilize into Techne? Become Doctrine? Feed into Design?]
+     - **Becomes**: [What does THIS method become when it crystallizes or gets embedded?]
+   - **Hybridizations**: Identify creative combinations where THIS praxis cNode combines with other types:
+     - **Hybrid Methods**: [What emerges when THIS method combines with Theoria/Doctrine/Poiesis/etc.?]
+     - **Emergent Practices**: [What new practices or approaches emerge from these combinations?]
+     - **Creative Recombination**: [How does THIS method recombine with other elements to create novel approaches?]
+   - **Interaction Dynamics**: Extract the actual dynamics from input:
+     - **Testing**: [How does THIS method test other cNodes? What contradictions does it reveal?]
+     - **Generation**: [How does THIS method generate new structures or claimnodes?]
+     - **Transformation**: [How does THIS method transform other cNodes? Into what?]
+     - **Rupture**: [Does THIS method cause ecstasis or rupture? How?]
 
 **Output Format:**
 
@@ -115,16 +147,38 @@
 - **Inquiry**: [inquiry from input]
 
 **cElement Properties:**
-- **Function**: "Enables structured action and/or epistemic inquiry" [from reference]
-- **State**: [Highly dynamic/Stable/Adaptive] - [from input or reference: "Highly dynamic"]
+- **State**: [Extract from input: specific state description for THIS method - e.g., "Highly dynamic, adapts to context", "Stable, well-established", etc.]
 - **Trace Behavior**:
-  - **Self-branching**: [High/Medium/Low] - [from "direct quote from input" or reference: "Self-branching and forking"]
-  - **Mutation Rate**: [High/Medium/Low] - [from "direct quote from input" or reference: "high entropy, prone to recombination"]
-  - **CRITICAL**: NO interpretive reasoning like "[suggesting X]" or "[as Y]" - ONLY direct quotes in brackets
-- **Affinity Bonds**: [Strong/Medium/Weak with X, Y, Z] - [from input relationships or reference: "Strong with Techne, Poiesis, Design; tightly coupled with Theoria when stable"]
-- **Ecstasis Role**: "Often the cause of rupture when a method reveals contradiction" [from reference]
-- **Prestige Role**: [High/Medium/Low] - [from input or reference: "Medium-high"]
-- **Epistemic Role**: "Central — Praxis defines how we know and what questions we even ask" [from reference]
+  - **Self-branching**: [Extract from input: High/Medium/Low - specific branching characteristics of THIS method]
+  - **Mutation Rate**: [Extract from input: High/Medium/Low - specific mutation rate of THIS method]
+  - **Recombination Tendency**: [Extract from input if present - specific recombination characteristics]
+  - **Other behaviors**: [Extract any other trace behaviors specific to THIS method from input]
+- **Affinity Bonds**: [Extract from input: specific bonds THIS method forms - e.g., "Strong with [specific cNode X], tightly coupled with [specific cNode Y] when stable"]
+- **Prestige Role**: [Extract from input: High/Medium/Low - specific prestige characteristics of THIS method]
+
+**Cross-Type Interactions:**
+- **With Theoria**: [How THIS method interacts with orientations - test, instantiate, or challenge?]
+- **With Doctrine**: [How THIS method interacts with rules - challenge, reify, or transform?]
+- **With Poiesis**: [How THIS method interacts with creative expression - limit, channel, or unleash?]
+- **With Techne**: [How THIS method interacts with tools - become techne when stabilized?]
+- **With Design**: [How THIS method interacts with functional forms - shape what gets built?]
+
+**Derivations:**
+- **Generates**: [What new cNodes, claimnodes, or structures does THIS method create?]
+- **Tests**: [What does THIS method test or falsify?]
+- **Transforms into**: [Does THIS method stabilize into Techne? Become Doctrine? Feed into Design?]
+- **Becomes**: [What does THIS method become when it crystallizes or gets embedded?]
+
+**Hybridizations:**
+- **Hybrid Methods**: [What emerges when THIS method combines with other cElement types?]
+- **Emergent Practices**: [What new practices or approaches emerge from these combinations?]
+- **Creative Recombination**: [How does THIS method recombine with other elements to create novel approaches?]
+
+**Interaction Dynamics:**
+- **Testing**: [How does THIS method test other cNodes? What contradictions does it reveal?]
+- **Generation**: [How does THIS method generate new structures or claimnodes?]
+- **Transformation**: [How does THIS method transform other cNodes? Into what?]
+- **Rupture**: [Does THIS method cause ecstasis or rupture? How?]
 
 ---
 

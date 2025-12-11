@@ -1,0 +1,25 @@
+{
+  "name": "featspec",
+  "version": "1.0.0",
+  "description": "A modular application for creating, organizing, and managing prompts for feature specification. Similar UI/UX to twodo but adapted for prompt template management.",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adamPlusPlus/FeatSpec.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/adamPlusPlus/FeatSpec/issues"
+  },
+  "homepage": "https://github.com/adamPlusPlus/FeatSpec#readme",
+  "dependencies": {
+    "@vercel/blob": "^2.0.0"
+  }
+}

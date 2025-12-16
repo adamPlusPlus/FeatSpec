@@ -1,0 +1,25 @@
+Fix textarea scroll reset bug and improve case selection modal UI
+
+- Fixed scroll position reset bug in textarea fields (input, output, notes, override instructions)
+  - Added scroll position preservation during re-renders
+  - Implemented multiple restoration attempts to ensure scroll position sticks
+  - Added preventScroll option to focus() calls
+
+- Fixed ContextMenuHandler error when double-clicking to open context menu
+  - Changed from trying to set read-only Event.target property to creating custom event object
+
+- Added override instructions feature
+  - New modifier: override-instructions
+  - New UI panel between prompt template and input (only visible when modifier is active)
+  - Override instructions included in "Copy Prompt + Input" with explicit instructions
+  - Added overrideInstructions field to section state
+
+- Improved case selection modal
+  - Fixed right-click context menu support in modals
+  - Changed automation engine selection from radio buttons to clickable text boxes
+  - Automation engine options now display in single horizontal row
+  - Styling matches case-option style for consistency
+
+- Suppressed console log noise
+  - Commented out "Removed Input Guidance" console.log messages
+

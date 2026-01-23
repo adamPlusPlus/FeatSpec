@@ -1,9 +1,10 @@
 // Drag and Drop Handler - Handles drag-and-drop operations for pages and elements
 class DragDropHandler {
-    constructor(eventSystem, stateManager, pointerTracker) {
+    constructor(eventSystem, stateManager, pointerTracker, errorHandler = null) {
         this.eventSystem = eventSystem;
         this.stateManager = stateManager;
         this.pointerTracker = pointerTracker;
+        this.errorHandler = errorHandler;
         this.dragState = null;
         this.dragThreshold = 5; // pixels
         this.dragOverElements = new Set();
@@ -101,7 +102,14 @@ class DragDropHandler {
                 dragData = JSON.parse(dataStr);
             }
         } catch (err) {
-            console.error('Failed to parse drag data:', err);
+            if (this.errorHandler) {
+                this.errorHandler.handleError(err, {
+                    source: 'DragDropHandler',
+                    operation: 'handleDrop'
+                });
+            } else {
+                console.error('Failed to parse drag data:', err);
+            }
             return;
         }
         
@@ -135,7 +143,14 @@ class DragDropHandler {
                 dragData = JSON.parse(dataStr);
             }
         } catch (err) {
-            console.error('Failed to parse drag data:', err);
+            if (this.errorHandler) {
+                this.errorHandler.handleError(err, {
+                    source: 'DragDropHandler',
+                    operation: 'handleDrop'
+                });
+            } else {
+                console.error('Failed to parse drag data:', err);
+            }
             return;
         }
         

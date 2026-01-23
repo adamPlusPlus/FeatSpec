@@ -1,9 +1,10 @@
 // Reference Documents - Loads and manages reference documents
 class ReferenceDocuments {
-    constructor() {
+    constructor(errorHandler = null) {
         this.documents = new Map(); // Cache: docName -> content
         this.loaded = false;
         this.loading = false;
+        this.errorHandler = errorHandler;
         
         // Path options to try (in order of preference)
         // Load from local reference directory
@@ -44,7 +45,7 @@ class ReferenceDocuments {
         if (this.loading) {
             // Wait for existing load to complete
             while (this.loading) {
-                await new Promise(resolve => setTimeout(resolve, 100));
+                await new Promise(resolve => setTimeout(resolve, AppConstants.TIMEOUTS.MODULE_LOAD_DELAY));
             }
             return this.documents;
         }
@@ -53,24 +54,64 @@ class ReferenceDocuments {
         
         try {
             const loadPromises = Object.entries(this.documentPaths).map(async ([key, relativePath]) => {
-                // Try each base path option
-                let lastError = null;
-                for (const basePath of this.pathOptions) {
-                    try {
-                        const fullPath = basePath + relativePath;
-                        const response = await fetch(fullPath);
-                        if (response.ok) {
-                            const content = await response.text();
-                            return [key, content];
-                        }
-                    } catch (error) {
-                        lastError = error;
-                        continue; // Try next path
+                // Use ErrorHandler with retry logic if available
+                if (this.errorHandler) {
+                    const result = await this.errorHandler.handleAsyncWithRetry(
+                        async () => {
+                            let lastError = null;
+                            for (const basePath of this.pathOptions) {
+                                try {
+                                    const fullPath = basePath + relativePath;
+                                    const response = await fetch(fullPath);
+                                    if (response.ok) {
+                                        return await response.text();
+                                    }
+                                } catch (error) {
+                                    lastError = error;
+                                    continue; // Try next path
+                                }
+                            }
+                            // All paths failed
+                            throw new Error(`Failed to load ${key} from any path. Last error: ${lastError?.message || 'unknown'}`);
+                        },
+                        { source: 'ReferenceDocuments', operation: 'loadDocument', documentKey: key },
+                        { maxRetries: 2, baseDelay: 500 }
+                    );
+                    
+                    if (!result.success) {
+                        // Show notification if all paths fail
+                        this.errorHandler.showUserNotification(result.error, {
+                            source: 'ReferenceDocuments',
+                            operation: 'loadDocument',
+                            documentKey: key
+                        }, {
+                            severity: ErrorHandler.Severity.WARNING,
+                            title: 'Failed to Load Reference Document'
+                        });
+                        return [key, null];
                     }
+                    
+                    return [key, result.data];
+                } else {
+                    // Fallback to original logic
+                    let lastError = null;
+                    for (const basePath of this.pathOptions) {
+                        try {
+                            const fullPath = basePath + relativePath;
+                            const response = await fetch(fullPath);
+                            if (response.ok) {
+                                const content = await response.text();
+                                return [key, content];
+                            }
+                        } catch (error) {
+                            lastError = error;
+                            continue; // Try next path
+                        }
+                    }
+                    // All paths failed
+                    console.warn(`Failed to load ${key} from any path. Last error:`, lastError);
+                    return [key, null];
                 }
-                // All paths failed
-                console.warn(`Failed to load ${key} from any path. Last error:`, lastError);
-                return [key, null];
             });
             
             const results = await Promise.all(loadPromises);
@@ -85,9 +126,24 @@ class ReferenceDocuments {
             
             return this.documents;
         } catch (error) {
-            console.error('Error loading reference documents:', error);
             this.loading = false;
-            throw error;
+            if (this.errorHandler) {
+                const errorResult = this.errorHandler.handleError(error, {
+                    source: 'ReferenceDocuments',
+                    operation: 'loadAll'
+                });
+                this.errorHandler.showUserNotification(error, {
+                    source: 'ReferenceDocuments',
+                    operation: 'loadAll'
+                }, {
+                    severity: ErrorHandler.Severity.ERROR,
+                    title: 'Failed to Load Reference Documents'
+                });
+                throw new Error(errorResult.error);
+            } else {
+                console.error('Error loading reference documents:', error);
+                throw error;
+            }
         }
     }
     
@@ -209,5 +265,5 @@ class ReferenceDocuments {
 }
 
 // Export singleton instance
-window.ReferenceDocuments = new ReferenceDocuments();
+window.ReferenceDocuments = new ReferenceDocuments(window.ErrorHandler || null);
 

@@ -9,7 +9,7 @@ import { ChatContextBuilder } from './ChatContextBuilder.js';
  * ChatSystem - Core chat system managing chat instances
  */
 export class ChatSystem {
-    constructor(eventSystem, stateManager) {
+    constructor(eventSystem, stateManager, errorHandler = null) {
         this.eventSystem = eventSystem;
         this.stateManager = stateManager;
         this.chats = new Map(); // chatId -> chatInstance
@@ -17,7 +17,9 @@ export class ChatSystem {
         // Initialize dependencies
         this.storage = new ChatStorage();
         this.contextBuilder = new ChatContextBuilder(stateManager);
-        this.messageHandler = new ChatMessageHandler(this.contextBuilder, eventSystem);
+        // Use errorHandler from parameter or try to get from window
+        const handler = errorHandler || (typeof window !== 'undefined' ? window.ErrorHandler : null);
+        this.messageHandler = new ChatMessageHandler(this.contextBuilder, eventSystem, handler);
         
         // Load existing chats
         this.loadAllChats();
@@ -213,7 +215,7 @@ export class ChatSystem {
         // Validate maxHeight if provided
         if (maxHeight !== null && maxHeight !== undefined) {
             const height = parseInt(maxHeight, 10);
-            if (isNaN(height) || height < 300 || height > 2000) {
+            if (isNaN(height) || height < AppConstants.UI.CHAT.MIN_HEIGHT || height > AppConstants.UI.CHAT.MAX_HEIGHT) {
                 return false;
             }
             chat.maxHeight = height;

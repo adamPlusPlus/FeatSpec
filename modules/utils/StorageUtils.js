@@ -43,7 +43,16 @@ export function load(key, defaultValue = null) {
         }
         return JSON.parse(item);
     } catch (error) {
-        console.warn(`Failed to load from storage key "${key}":`, error);
+        const errorHandler = typeof window !== 'undefined' && window.ErrorHandler ? new window.ErrorHandler(null) : null;
+        if (errorHandler) {
+            errorHandler.handleError(error, {
+                source: 'StorageUtils',
+                operation: 'load',
+                key
+            });
+        } else {
+            console.warn(`Failed to load from storage key "${key}":`, error);
+        }
         return defaultValue;
     }
 }
@@ -98,7 +107,16 @@ export function getAllKeys(prefix) {
             }
         }
     } catch (error) {
-        console.warn('Failed to get keys from storage:', error);
+        const errorHandler = typeof window !== 'undefined' && window.ErrorHandler ? new window.ErrorHandler(null) : null;
+        if (errorHandler) {
+            errorHandler.handleError(error, {
+                source: 'StorageUtils',
+                operation: 'getAllKeys',
+                prefix
+            });
+        } else {
+            console.warn('Failed to get keys from storage:', error);
+        }
     }
     
     return keys;

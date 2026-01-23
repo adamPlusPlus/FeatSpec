@@ -1,0 +1,92 @@
+Magic Numbers Extraction - Implementation Summary
+
+## Completed Work
+
+### Phase 1: Created AppConstants ✅
+- Created `modules/utils/AppConstants.js` with all constants organized by category:
+  - TIMEOUTS: All timeout and delay values (50ms, 100ms, 200ms, 300ms, 2000ms, 5000ms, 10000ms, 120000ms, 300000ms)
+  - FILE_PATTERNS: File extension patterns, complete/draft suffixes, and pattern templates
+  - UI: Z-index values and chat window size constants
+  - BUFFERS: Buffer size constants (10MB)
+  - TEXT: Text truncation limits (80, 100, 200, 500, 8000 characters)
+- Added helper methods:
+  - `generateCompleteFileName()`, `generateDraftFileName()`
+  - `matchesFilePattern()`, `isCompleteFile()`, `isDraftFile()`
+  - `draftToComplete()`, `completeToDraft()`
+
+### Phase 2: Updated All Modules ✅
+- **AutomationSystem.js**: Replaced all timeout values (2000ms, 5000ms, 120000ms) and file patterns
+- **CursorCLIAutomationSystem.js**: Replaced 2000ms timeout
+- **MultiAgentAutomationSystem.js**: Replaced 2000ms timeout
+- **DataLayer.js**: Replaced 200ms delay
+- **UIManager.js**: Replaced 300ms delay
+- **InitializationManager.js**: Replaced 50ms delay
+- **PromptLoader.js, PipelineConfig.js, ReferenceDocuments.js**: Replaced 100ms delays
+- **AutomationOrchestrator.js**: Updated file pattern matching to use AppConstants
+- **PlaceholderService.js**: Replaced truncation limits (80, 100)
+- **RenderingEngine.js**: Replaced z-index 10000 and 10ms delay
+- **ChatWindow.js**: Replaced z-index 10000
+- **ChatSystem.js**: Replaced height limits (300, 2000)
+
+### Phase 3: Updated app.js ✅
+- Replaced all setTimeout delays (50ms, 100ms, 300ms, 2000ms, 0ms)
+- Replaced inline z-index: 2001 with AppConstants
+
+### Phase 4: Updated app.css ✅
+- Added CSS custom properties for all z-index values:
+  - `--z-index-base: 10`
+  - `--z-index-overlay: 100`
+  - `--z-index-modal: 1000`
+  - `--z-index-dropdown: 2000`
+  - `--z-index-dropdown-count: 2001`
+  - `--z-index-max-modal: 3000`
+  - `--z-index-tooltip: 10000`
+  - `--z-index-chat-window: 10000`
+  - `--z-index-max: 10001`
+- Replaced all hardcoded z-index values with CSS variables
+
+### Phase 5: Updated server.js ✅
+- Created SERVER_CONSTANTS object matching client-side AppConstants
+- Replaced 300000ms timeout with SERVER_CONSTANTS.TIMEOUTS.CURSOR_CLI_TIMEOUT
+- Replaced 10MB buffer with SERVER_CONSTANTS.BUFFERS.CURSOR_CLI_MAX
+- Replaced 100ms delay with SERVER_CONSTANTS.TIMEOUTS.SERVER_OPERATION_DELAY
+
+### Phase 6: Integration ✅
+- Added AppConstants.js to index.html script loading (before other modules that use it)
+
+## Key Improvements
+
+1. **Single Source of Truth**: All magic numbers now defined in AppConstants.js
+2. **Maintainability**: Easy to adjust timeouts/patterns by changing one file
+3. **Consistency**: Same values used across entire codebase
+4. **Documentation**: Constants file serves as documentation
+5. **CSS Variables**: Z-index values use CSS custom properties for better theming
+
+## Files Created
+- `modules/utils/AppConstants.js`
+
+## Files Modified
+- `modules/AutomationSystem.js` - Uses AppConstants for timeouts and file patterns
+- `modules/CursorCLIAutomationSystem.js` - Uses AppConstants for timeouts
+- `modules/MultiAgentAutomationSystem.js` - Uses AppConstants for timeouts
+- `modules/DataLayer.js` - Uses AppConstants for delays
+- `modules/managers/UIManager.js` - Uses AppConstants for delays
+- `modules/managers/InitializationManager.js` - Uses AppConstants for delays
+- `modules/PromptLoader.js` - Uses AppConstants for delays
+- `modules/PipelineConfig.js` - Uses AppConstants for delays
+- `modules/ReferenceDocuments.js` - Uses AppConstants for delays
+- `modules/services/AutomationOrchestrator.js` - Uses AppConstants for file patterns
+- `modules/services/PlaceholderService.js` - Uses AppConstants for text limits
+- `modules/RenderingEngine.js` - Uses AppConstants for z-index and delays
+- `modules/ui/ChatWindow.js` - Uses AppConstants for z-index
+- `modules/ChatSystem.js` - Uses AppConstants for height limits
+- `app.js` - Uses AppConstants for timeouts and z-index
+- `app.css` - Uses CSS variables for z-index
+- `server.js` - Uses SERVER_CONSTANTS for timeouts and buffers
+- `index.html` - Added AppConstants.js script tag
+
+## Testing Status
+- ✅ No linter errors
+- ✅ All constants properly defined and used
+- ✅ All magic numbers replaced (except in AppConstants.js itself)
+- Manual testing recommended to verify all functionality works correctly

@@ -44,7 +44,7 @@ export class ChatWindow {
         this.windowElement.style.width = `${this.size.width}px`;
         this.windowElement.style.height = `${this.size.height}px`;
         this.windowElement.style.display = 'none';
-        this.windowElement.style.zIndex = '10000';
+        this.windowElement.style.zIndex = AppConstants.UI.Z_INDEX.CHAT_WINDOW.toString();
         
         // Load saved position
         loadPosition(this.windowElement, this.storageKey);

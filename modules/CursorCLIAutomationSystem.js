@@ -1,9 +1,10 @@
 // Cursor CLI Automation System - Executes pipeline steps sequentially via cursor-cli
 class CursorCLIAutomationSystem {
-    constructor(eventSystem, stateManager, renderingEngine) {
+    constructor(eventSystem, stateManager, renderingEngine, errorHandler = null) {
         this.eventSystem = eventSystem;
         this.stateManager = stateManager;
         this.renderingEngine = renderingEngine;
+        this.errorHandler = errorHandler;
         this.isRunning = false;
         this.currentProjectId = null;
         this.shouldStop = false;
@@ -23,6 +24,66 @@ class CursorCLIAutomationSystem {
     }
     
     // Start automation for a project - executes all incomplete sections sequentially
+    /**
+     * Validate project and dependencies before starting automation
+     * @private
+     * @returns {Object} Validation result with valid flag, message, and missingDeps
+     */
+    _validateBeforeStart(project, scopeDir) {
+        if (!scopeDir || !scopeDir.trim()) {
+            return {
+                valid: false,
+                message: 'Please set the scope directory in the Pipeline Flow view for cursor-cli mode',
+                missingDeps: []
+            };
+        }
+        
+        // Validate dependencies before starting
+        const validationResult = this.validateDependencies(project);
+        if (!validationResult.valid) {
+            return validationResult;
+        }
+        
+        // Get all sections, filter out completed and skipped
+        const sections = project.sections.filter(s => 
+            s.status !== 'complete' && s.status !== 'skipped'
+        );
+        
+        if (sections.length === 0) {
+            return {
+                valid: false,
+                message: 'No incomplete sections to execute',
+                missingDeps: []
+            };
+        }
+        
+        return { valid: true, sections };
+    }
+    
+    /**
+     * Execute a section with error handling
+     * @private
+     * @returns {Promise<boolean>} True if execution succeeded, false if it failed
+     */
+    async _executeSectionWithErrorHandling(projectId, section, index, total) {
+        this.updateProgress(
+            `Executing step ${index + 1} of ${total}: ${section.sectionName || section.sectionId}`,
+            `Starting ${section.sectionName || section.sectionId}...`
+        );
+        
+        try {
+            await this.executeSection(projectId, section);
+            this.appendToLog(`✓ Completed ${section.sectionName || section.sectionId}`);
+            return true;
+        } catch (error) {
+            this.appendToLog(`✗ Error in ${section.sectionName || section.sectionId}: ${error.message}`);
+            this.updateProgress(`Error: ${error.message}`, '');
+            // Stop execution on error
+            alert(`Error executing ${section.sectionName || section.sectionId}: ${error.message}\n\nExecution stopped.`);
+            return false;
+        }
+    }
+    
     async start(projectId, scopeDirectory = null) {
         if (this.isRunning) {
             console.warn('Cursor CLI automation already running');
@@ -37,27 +98,15 @@ class CursorCLIAutomationSystem {
         
         // Use provided scopeDirectory or get from project (per-project, not global)
         const scopeDir = scopeDirectory || project.scopeDirectory || this.stateManager.getScopeDirectory();
-        if (!scopeDir || !scopeDir.trim()) {
-            alert('Please set the scope directory in the Pipeline Flow view for cursor-cli mode');
+        
+        // Validate before starting
+        const validation = this._validateBeforeStart(project, scopeDir);
+        if (!validation.valid) {
+            alert(validation.message + (validation.missingDeps?.length > 0 ? `\n\nMissing dependencies:\n${validation.missingDeps.join('\n')}` : ''));
             return;
         }
         
-        // Validate dependencies before starting
-        const validationResult = this.validateDependencies(project);
-        if (!validationResult.valid) {
-            alert(`Cannot start automation: ${validationResult.message}\n\nMissing dependencies:\n${validationResult.missingDeps.join('\n')}`);
-            return;
-        }
-        
-        // Get all sections, filter out completed and skipped
-        const sections = project.sections.filter(s => 
-            s.status !== 'complete' && s.status !== 'skipped'
-        );
-        
-        if (sections.length === 0) {
-            alert('No incomplete sections to execute');
-            return;
-        }
+        const sections = validation.sections;
         
         this.currentProjectId = projectId;
         this.isRunning = true;
@@ -75,21 +124,9 @@ class CursorCLIAutomationSystem {
                     break;
                 }
                 
-                const section = sections[i];
-                this.updateProgress(
-                    `Executing step ${i + 1} of ${sections.length}: ${section.sectionName || section.sectionId}`,
-                    `Starting ${section.sectionName || section.sectionId}...`
-                );
-                
-                try {
-                    await this.executeSection(projectId, section);
-                    this.appendToLog(`✓ Completed ${section.sectionName || section.sectionId}`);
-                } catch (error) {
-                    this.appendToLog(`✗ Error in ${section.sectionName || section.sectionId}: ${error.message}`);
-                    this.updateProgress(`Error: ${error.message}`, '');
-                    // Stop execution on error
-                    alert(`Error executing ${section.sectionName || section.sectionId}: ${error.message}\n\nExecution stopped.`);
-                    break;
+                const success = await this._executeSectionWithErrorHandling(projectId, sections[i], i, sections.length);
+                if (!success) {
+                    break; // Stop on error
                 }
             }
             
@@ -99,12 +136,17 @@ class CursorCLIAutomationSystem {
                 // Auto-close after 2 seconds
                 setTimeout(() => {
                     this.hideProgressModal();
-                }, 2000);
+                }, AppConstants.TIMEOUTS.MODAL_AUTO_CLOSE);
             }
         } catch (error) {
-            console.error('Error in cursor-cli automation:', error);
-            this.updateProgress(`Fatal error: ${error.message}`, '');
-            alert(`Fatal error: ${error.message}`);
+            const errorMsg = this.errorHandler ? this.errorHandler.getUserMessage(error) : error.message;
+            if (this.errorHandler) {
+                this.errorHandler.handleError(error, { source: 'CursorCLIAutomationSystem', operation: 'start', projectId });
+            } else {
+                console.error('Error in cursor-cli automation:', error);
+            }
+            this.updateProgress(`Fatal error: ${errorMsg}`, '');
+            alert(`Fatal error: ${errorMsg}`);
         } finally {
             this.isRunning = false;
             this.currentProjectId = null;
@@ -280,7 +322,7 @@ class CursorCLIAutomationSystem {
             
             // Clear log
             if (this.progressLog) {
-                this.progressLog.innerHTML = '';
+                this.progressLog.innerHTML = ''; // Clearing - safe
             }
         }
     }

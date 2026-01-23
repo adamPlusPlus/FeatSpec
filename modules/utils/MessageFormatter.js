@@ -88,6 +88,11 @@ export function renderMarkdown(text) {
     // Line breaks
     html = html.replace(/\n/g, '<br>');
     
+    // Sanitize final HTML to prevent XSS
+    if (typeof window !== 'undefined' && window.sanitizeMarkdown) {
+        return window.sanitizeMarkdown(html);
+    }
+    // Fallback: if HtmlSanitizer not loaded, return as-is (shouldn't happen in production)
     return html;
 }
 

@@ -1,0 +1,35 @@
+Separate Business Logic from Rendering and File Watching
+
+Refactored RenderingEngine and AutomationSystem to extract business logic into dedicated service classes, addressing mixed concerns identified in code audit.
+
+## New Service Classes Created
+
+- SectionLogicService: Dependency checking, status determination, progress calculation
+- NavigationService: Section navigation (previous/next), first incomplete section finding
+- CaseInfoService: Case display names, badges, and chain information
+- WorkflowContextService: Workflow context calculations (step position, totals)
+- ProcessStepService: Process step trigger loading and button rendering
+- PlaceholderService: Input placeholder loading and text extraction
+- AutomationOrchestrator: Automation business logic coordination (section completion, state updates, navigation)
+
+## Refactored Modules
+
+- RenderingEngine: Now delegates all business logic to services, focused solely on DOM rendering
+- AutomationSystem: Delegates business logic to AutomationOrchestrator, focused on file watching operations
+- app.js: Initializes and wires up all new services, delegates checkDependencies and getFirstIncompleteSection to services
+
+## Benefits
+
+- Single Responsibility: Each class has one clear purpose
+- Testability: Business logic can be tested independently
+- Reusability: Services can be used by other modules
+- Maintainability: Easier to understand and modify
+- Reduced Coupling: Less dependency on window.app global
+
+## Files Changed
+
+- Created: modules/services/ directory with 7 new service classes
+- Modified: modules/RenderingEngine.js (refactored to use services)
+- Modified: modules/AutomationSystem.js (delegates to AutomationOrchestrator)
+- Modified: app.js (initializes services, updates method delegations)
+- Modified: index.html (added script tags for new services)

@@ -1,9 +1,10 @@
 // Context Menu Handler - Manages context menu display and interaction
 class ContextMenuHandler {
-    constructor(eventSystem, stateManager, pointerTracker) {
+    constructor(eventSystem, stateManager, pointerTracker, renderingEngine = null) {
         this.eventSystem = eventSystem;
         this.stateManager = stateManager;
         this.pointerTracker = pointerTracker;
+        this.renderingEngine = renderingEngine;
         this.menuState = null;
         this.lastRightClickTime = 0;
         this.doubleClickThreshold = 300; // milliseconds for double right-click
@@ -276,8 +277,8 @@ class ContextMenuHandler {
                     // Section ID might be in the navigation or we can get it from state
                     const state = this.stateManager.getState();
                     const activeProject = this.stateManager.getActiveProject();
-                    if (activeProject && window.app?.renderingEngine?.activeSectionId) {
-                        sectionId = window.app.renderingEngine.activeSectionId;
+                    if (activeProject && this.renderingEngine?.activeSectionId) {
+                        sectionId = this.renderingEngine.activeSectionId;
                     }
                 }
             }

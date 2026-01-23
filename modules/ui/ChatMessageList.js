@@ -49,7 +49,7 @@ export class ChatMessageList {
             return;
         }
         
-        // Clear existing messages
+        // Clear existing messages - safe
         this.messageListElement.innerHTML = '';
         
         // Render each message
@@ -102,13 +102,20 @@ export class ChatMessageList {
         const roleLabel = message.role === 'user' ? 'You' : 'Assistant';
         const timeStr = formatted.formattedTime || '';
         
-        messageElement.innerHTML = `
+        // formatted.html is already sanitized by MessageFormatter.renderMarkdown() which uses sanitizeMarkdown
+        // But use safeSetInnerHTML for extra safety
+        const messageHtml = `
             <div class="chat-message-header">
                 <span class="chat-message-role">${roleLabel}</span>
                 ${timeStr ? `<span class="chat-message-time">${timeStr}</span>` : ''}
             </div>
             <div class="chat-message-content">${formatted.html}</div>
         `;
+        if (typeof window !== 'undefined' && window.safeSetInnerHTML) {
+            window.safeSetInnerHTML(messageElement, messageHtml, { allowMarkdown: true });
+        } else {
+            messageElement.innerHTML = messageHtml;
+        }
         
         this.messageListElement.appendChild(messageElement);
     }
@@ -127,6 +134,7 @@ export class ChatMessageList {
         const loadingElement = document.createElement('div');
         loadingElement.className = 'chat-message chat-message-loading';
         loadingElement.id = 'chat-loading-indicator';
+        // Static loading indicator - safe
         loadingElement.innerHTML = `
             <div class="chat-message-header">
                 <span class="chat-message-role">Assistant</span>

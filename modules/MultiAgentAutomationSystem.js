@@ -1,9 +1,10 @@
 // Multi-Agent Automation System - Executes pipeline steps in parallel with quality gates, synthesis, and multi-agent discussion
 class MultiAgentAutomationSystem {
-    constructor(eventSystem, stateManager, renderingEngine) {
+    constructor(eventSystem, stateManager, renderingEngine, errorHandler = null) {
         this.eventSystem = eventSystem;
         this.stateManager = stateManager;
         this.renderingEngine = renderingEngine;
+        this.errorHandler = errorHandler;
         this.isRunning = false;
         this.currentProjectId = null;
         this.shouldStop = false;
@@ -98,7 +99,7 @@ class MultiAgentAutomationSystem {
                 // Auto-close after 2 seconds
                 setTimeout(() => {
                     this.hideProgressModal();
-                }, 2000);
+                }, AppConstants.TIMEOUTS.MODAL_AUTO_CLOSE);
             }
         } catch (error) {
             console.error('Error in multi-agent automation:', error);
@@ -129,6 +130,132 @@ class MultiAgentAutomationSystem {
         }
     }
     
+    /**
+     * Check for deadlock condition (no ready steps but incomplete steps remain)
+     * @private
+     * @returns {Object} Deadlock status with isDeadlock flag and message
+     */
+    _checkForDeadlock(project, readySteps) {
+        if (readySteps.length > 0) {
+            return { isDeadlock: false };
+        }
+        
+        // Check if all steps are complete
+        const incompleteSteps = project.sections.filter(s => 
+            s.status !== 'complete' && s.status !== 'skipped'
+        );
+        
+        if (incompleteSteps.length === 0) {
+            // All done!
+            return { isDeadlock: false, allComplete: true };
+        }
+        
+        // Deadlock: steps have unmet dependencies
+        const stuckSteps = incompleteSteps.map(s => s.sectionName || s.sectionId).join(', ');
+        return {
+            isDeadlock: true,
+            message: `Deadlock detected: Steps cannot proceed due to unmet dependencies: ${stuckSteps}`
+        };
+    }
+    
+    /**
+     * Execute a single iteration of the multi-agent system
+     * @private
+     * @returns {Object} Iteration result with continue flag and updated project
+     */
+    async _executeIteration(projectId, project, iterationCount) {
+        // Get all ready steps (dependencies met)
+        const readySteps = this.getReadySteps(project);
+        
+        // Log iteration start
+        this.addExecutionEvent('iteration_start', {
+            iteration: iterationCount,
+            readySteps: readySteps.map(s => s.sectionName || s.sectionId)
+        });
+        this.updateUI();
+        
+        // Check for deadlock
+        const deadlockCheck = this._checkForDeadlock(project, readySteps);
+        if (deadlockCheck.allComplete) {
+            return { continue: false, project };
+        }
+        if (deadlockCheck.isDeadlock) {
+            if (this.errorHandler) {
+                this.errorHandler.showUserNotification(deadlockCheck.message, {
+                    source: 'MultiAgentAutomationSystem',
+                    operation: '_executeIteration',
+                    projectId
+                }, {
+                    severity: ErrorHandler.Severity.ERROR,
+                    title: 'Deadlock Detected'
+                });
+            }
+            throw new Error(deadlockCheck.message);
+        }
+        
+        // Execute ready steps in parallel
+        this.updateProgress(
+            `Executing ${readySteps.length} step(s) in parallel (iteration ${iterationCount})...`,
+            ''
+        );
+        
+        this.addExecutionEvent('parallel_start', {
+            iteration: iterationCount,
+            steps: readySteps.map(s => s.sectionName || s.sectionId)
+        });
+        this.updateUI();
+        
+        const parallelResults = await this.executeReadyStepsInParallel(projectId, readySteps);
+        
+        this.addExecutionEvent('parallel_complete', {
+            iteration: iterationCount,
+            results: parallelResults.map(r => ({
+                step: r.section.sectionName || r.section.sectionId,
+                success: r.success
+            }))
+        });
+        this.updateUI();
+        
+        // Score outputs for quality
+        for (const result of parallelResults) {
+            if (result.success) {
+                const qualityScore = await this.scoreOutput(result.output, result.section);
+                this.qualityScores.set(result.section.sectionId, qualityScore);
+                this.appendToLog(
+                    `Quality score for "${result.section.sectionName || result.section.sectionId}": ${(qualityScore.score * 100).toFixed(1)}%`
+                );
+            }
+        }
+        
+        // Synthesize outputs from parallel execution
+        this.addExecutionEvent('synthesis_start', { iteration: iterationCount });
+        this.updateUI();
+        
+        const synthesis = await this.synthesizeOutputs(projectId, parallelResults);
+        
+        if (synthesis) {
+            this.appendToLog('Synthesis completed');
+            this.addExecutionEvent('synthesis_complete', {
+                iteration: iterationCount,
+                conflicts: synthesis.conflicts?.length || 0,
+                improvements: synthesis.improvements?.length || 0
+            });
+            
+            // Refine outputs based on synthesis feedback
+            await this.refineOutputsBasedOnSynthesis(projectId, parallelResults, synthesis);
+        }
+        
+        this.updateUI();
+        
+        // Update project reference (may have changed)
+        const updatedProject = this.stateManager.getProject(projectId);
+        if (!updatedProject) {
+            return { continue: false, project };
+        }
+        
+        return { continue: true, project: updatedProject };
+    }
+    
     // Main execution loop with multi-agent system
     async executeWithAgents(projectId) {
         const project = this.stateManager.getProject(projectId);
@@ -138,95 +265,17 @@ class MultiAgentAutomationSystem {
         
         let iterationCount = 0;
         const maxIterations = 50; // Safety limit
+        let currentProject = project;
         
         while (iterationCount < maxIterations && !this.shouldStop) {
             iterationCount++;
             this.currentIteration = iterationCount;
             
-            // Get all ready steps (dependencies met)
-            const readySteps = this.getReadySteps(project);
-            
-            // Log iteration start
-            this.addExecutionEvent('iteration_start', {
-                iteration: iterationCount,
-                readySteps: readySteps.map(s => s.sectionName || s.sectionId)
-            });
-            this.updateUI();
-            
-            if (readySteps.length === 0) {
-                // Check if all steps are complete
-                const incompleteSteps = project.sections.filter(s => 
-                    s.status !== 'complete' && s.status !== 'skipped'
-                );
-                
-                if (incompleteSteps.length === 0) {
-                    // All done!
-                    break;
-                } else {
-                    // Deadlock: steps have unmet dependencies
-                    const stuckSteps = incompleteSteps.map(s => s.sectionName || s.sectionId).join(', ');
-                    throw new Error(`Deadlock detected: Steps cannot proceed due to unmet dependencies: ${stuckSteps}`);
-                }
+            const result = await this._executeIteration(projectId, currentProject, iterationCount);
+            if (!result.continue) {
+                break; // All done or project deleted
             }
-            
-            // Execute ready steps in parallel
-            this.updateProgress(
-                `Executing ${readySteps.length} step(s) in parallel (iteration ${iterationCount})...`,
-                ''
-            );
-            
-            this.addExecutionEvent('parallel_start', {
-                iteration: iterationCount,
-                steps: readySteps.map(s => s.sectionName || s.sectionId)
-            });
-            this.updateUI();
-            
-            const parallelResults = await this.executeReadyStepsInParallel(projectId, readySteps);
-            
-            this.addExecutionEvent('parallel_complete', {
-                iteration: iterationCount,
-                results: parallelResults.map(r => ({
-                    step: r.section.sectionName || r.section.sectionId,
-                    success: r.success
-                }))
-            });
-            this.updateUI();
-            
-            // Score outputs for quality
-            for (const result of parallelResults) {
-                if (result.success) {
-                    const qualityScore = await this.scoreOutput(result.output, result.section);
-                    this.qualityScores.set(result.section.sectionId, qualityScore);
-                    this.appendToLog(
-                        `Quality score for "${result.section.sectionName || result.section.sectionId}": ${(qualityScore.score * 100).toFixed(1)}%`
-                    );
-                }
-            }
-            
-            // Synthesize outputs from parallel execution
-            this.addExecutionEvent('synthesis_start', { iteration: iterationCount });
-            this.updateUI();
-            
-            const synthesis = await this.synthesizeOutputs(projectId, parallelResults);
-            
-            if (synthesis) {
-                this.appendToLog('Synthesis completed');
-                this.addExecutionEvent('synthesis_complete', {
-                    iteration: iterationCount,
-                    conflicts: synthesis.conflicts?.length || 0,
-                    improvements: synthesis.improvements?.length || 0
-                });
-                
-                // Refine outputs based on synthesis feedback
-                await this.refineOutputsBasedOnSynthesis(projectId, parallelResults, synthesis);
-            }
-            
-            this.updateUI();
-            
-            // Update project reference (may have changed)
-            const updatedProject = this.stateManager.getProject(projectId);
-            if (!updatedProject) break;
-            project = updatedProject;
+            currentProject = result.project;
         }
         
         if (iterationCount >= maxIterations) {
@@ -345,7 +394,19 @@ class MultiAgentAutomationSystem {
             const project = this.stateManager.getProject(projectId);
             const scopeDir = project?.scopeDirectory || this.stateManager.getScopeDirectory();
             if (!scopeDir) {
-                throw new Error('Scope directory not set for this project');
+                const error = 'Scope directory not set for this project';
+                if (this.errorHandler) {
+                    this.errorHandler.showUserNotification(error, {
+                        source: 'MultiAgentAutomationSystem',
+                        operation: 'executeStepWithAgent',
+                        projectId,
+                        sectionId: section.sectionId
+                    }, {
+                        severity: ErrorHandler.Severity.ERROR,
+                        title: 'Scope Directory Required'
+                    });
+                }
+                throw new Error(error);
             }
             
             // Execute cursor-cli
@@ -719,7 +780,19 @@ Please refine the output to incorporate the synthesis feedback above. Generate a
         const promptLoader = window.PromptLoader;
         
         if (!promptLoader) {
-            throw new Error('PromptLoader not available');
+            const error = 'PromptLoader not available';
+            if (this.errorHandler) {
+                this.errorHandler.showUserNotification(error, {
+                    source: 'MultiAgentAutomationSystem',
+                    operation: 'buildEnhancedPrompt',
+                    projectId,
+                    sectionId: section.sectionId
+                }, {
+                    severity: ErrorHandler.Severity.ERROR,
+                    title: 'PromptLoader Not Available'
+                });
+            }
+            throw new Error(error);
         }
         
         // Get base prompt
@@ -731,7 +804,19 @@ Please refine the output to incorporate the synthesis feedback above. Generate a
         );
         
         if (!basePrompt) {
-            throw new Error(`Could not load prompt for ${section.sectionId}`);
+            const error = `Could not load prompt for ${section.sectionId}`;
+            if (this.errorHandler) {
+                this.errorHandler.showUserNotification(error, {
+                    source: 'MultiAgentAutomationSystem',
+                    operation: 'buildEnhancedPrompt',
+                    projectId,
+                    sectionId: section.sectionId
+                }, {
+                    severity: ErrorHandler.Severity.ERROR,
+                    title: 'Failed to Load Prompt'
+                });
+            }
+            throw new Error(error);
         }
         
         let enhancedPrompt = basePrompt;
@@ -916,27 +1001,69 @@ Please provide a resolution that reconciles these conflicts. Respond with a JSON
         return { valid: true };
     }
     
-    // Execute cursor-cli via server endpoint
+    // Execute cursor-cli via server endpoint with retry logic
     async executeCursorCLI(prompt, scopeDirectory) {
-        const response = await fetch('/api/cursor-cli-execute', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                prompt: prompt,
-                scopeDirectory: scopeDirectory
-            })
-        });
-        
-        if (!response.ok) {
-            throw new Error(`Server error: ${response.status} ${response.statusText}`);
+        if (this.errorHandler) {
+            const result = await this.errorHandler.handleAsyncWithRetry(
+                async () => {
+                    const response = await fetch('/api/cursor-cli-execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            prompt: prompt,
+                            scopeDirectory: scopeDirectory
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`Server error: ${response.status} ${response.statusText}`);
+                    }
+                    
+                    const result = await response.json();
+                    if (!result.success) {
+                        throw new Error(result.error || 'Cursor CLI execution failed');
+                    }
+                    
+                    return result.output;
+                },
+                { source: 'MultiAgentAutomationSystem', operation: 'executeCursorCLI' },
+                { maxRetries: 2, baseDelay: 2000 }
+            );
+            
+            if (!result.success) {
+                this.errorHandler.showUserNotification(result.error, {
+                    source: 'MultiAgentAutomationSystem',
+                    operation: 'executeCursorCLI'
+                }, {
+                    severity: ErrorHandler.Severity.ERROR,
+                    title: 'Cursor CLI Execution Failed'
+                });
+                throw new Error(result.error);
+            }
+            
+            return result.data;
+        } else {
+            // Fallback to original logic
+            const response = await fetch('/api/cursor-cli-execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    prompt: prompt,
+                    scopeDirectory: scopeDirectory
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.status} ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            if (!result.success) {
+                throw new Error(result.error || 'Cursor CLI execution failed');
+            }
+            
+            return result.output;
         }
-        
-        const result = await response.json();
-        if (!result.success) {
-            throw new Error(result.error || 'Cursor CLI execution failed');
-        }
-        
-        return result.output;
     }
     
     // Save output to file for persistence
@@ -993,7 +1120,7 @@ Please provide a resolution that reconciles these conflicts. Respond with a JSON
             
             // Clear log
             if (this.progressLog) {
-                this.progressLog.innerHTML = '';
+                this.progressLog.innerHTML = ''; // Clearing - safe
             }
         }
     }
@@ -1068,7 +1195,7 @@ Please provide a resolution that reconciles these conflicts. Respond with a JSON
             return;
         }
         
-        container.innerHTML = '';
+        container.innerHTML = ''; // Clearing - safe
         this.activeAgents.forEach((agentInfo, sectionId) => {
             const project = this.stateManager.getProject(this.currentProjectId);
             const section = project?.sections.find(s => s.sectionId === sectionId);
@@ -1076,12 +1203,18 @@ Please provide a resolution that reconciles these conflicts. Respond with a JSON
             
             const agentEl = document.createElement('div');
             agentEl.style.cssText = 'background: #2d2d2d; padding: 6px 12px; border-radius: 4px; font-size: 0.85em; display: flex; align-items: center; gap: 8px;';
-            agentEl.innerHTML = `
+            // agentInfo contains user data (section names, roles) - escape and use safeSetInnerHTML
+            const agentHtml = `
                 <span style="color: #4CAF50;">●</span>
                 <span style="color: #e0e0e0;">${this.escapeHtml(sectionName)}</span>
-                <span style="color: #888; font-size: 0.9em;">(${agentInfo.role})</span>
+                <span style="color: #888; font-size: 0.9em;">(${this.escapeHtml(agentInfo.role)})</span>
                 ${agentInfo.retryCount > 0 ? `<span style="color: #ff9800; font-size: 0.9em;">[Retry ${agentInfo.retryCount}]</span>` : ''}
             `;
+            if (window.safeSetInnerHTML) {
+                window.safeSetInnerHTML(agentEl, agentHtml, { trusted: false });
+            } else {
+                agentEl.innerHTML = agentHtml;
+            }
             container.appendChild(agentEl);
         });
     }
@@ -1140,15 +1273,22 @@ Please provide a resolution that reconciles these conflicts. Respond with a JSON
                         break;
                 }
                 
+                // eventText may contain user data - escape
+                const escapedEventText = this.escapeHtml(eventText);
                 html += `<div style="color: ${color}; font-size: 0.9em; margin-left: 12px; margin-top: 4px;">
-                    <span style="color: #888;">[${time}]</span> ${eventText}
+                    <span style="color: #888;">[${time}]</span> ${escapedEventText}
                 </div>`;
             });
             
             html += `</div>`;
         });
         
-        container.innerHTML = html;
+        // html contains user data (agent discussions, messages) - sanitize
+        if (window.safeSetInnerHTML) {
+            window.safeSetInnerHTML(container, html, { allowMarkdown: true });
+        } else {
+            container.innerHTML = html;
+        }
         container.scrollTop = container.scrollHeight;
     }
     
@@ -1189,6 +1329,7 @@ Please provide a resolution that reconciles these conflicts. Respond with a JSON
         if (!container) return;
         
         if (this.ragSteps.length === 0) {
+            // Static message - safe
             container.innerHTML = '<div style="color: #888;">No RAG steps yet</div>';
             return;
         }
@@ -1221,12 +1362,19 @@ Please provide a resolution that reconciles these conflicts. Respond with a JSON
             html += `</div>`;
             html += `<div style="color: #e0e0e0; font-size: 0.9em;">Step: ${this.escapeHtml(step.step)}</div>`;
             if (step.contextSources && step.contextSources.length > 0) {
-                html += `<div style="color: #888; font-size: 0.85em; margin-top: 4px;">Sources: ${step.contextSources.join(', ')}</div>`;
+                // contextSources may contain user data - escape each source
+                const escapedSources = step.contextSources.map(s => this.escapeHtml(s)).join(', ');
+                html += `<div style="color: #888; font-size: 0.85em; margin-top: 4px;">Sources: ${escapedSources}</div>`;
             }
             html += `</div>`;
         });
         
-        container.innerHTML = html;
+        // html contains user data (agent discussions, messages) - sanitize
+        if (window.safeSetInnerHTML) {
+            window.safeSetInnerHTML(container, html, { allowMarkdown: true });
+        } else {
+            container.innerHTML = html;
+        }
     }
     
     // Escape HTML

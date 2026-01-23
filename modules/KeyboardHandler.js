@@ -1,9 +1,15 @@
 // Keyboard Handler - Detects and executes keyboard shortcuts
 class KeyboardHandler {
-    constructor(eventSystem, stateManager) {
+    constructor(eventSystem, stateManager, managers = {}) {
         this.eventSystem = eventSystem;
         this.stateManager = stateManager;
         this.shortcuts = new Map();
+        
+        // Managers for operations
+        this.projectManager = managers.projectManager;
+        this.sectionManager = managers.sectionManager;
+        this.renderingEngine = managers.renderingEngine;
+        this.appInstance = managers.appInstance; // For methods not yet in managers
         
         this.setupEventListeners();
         this.registerDefaultShortcuts();
@@ -24,12 +30,14 @@ class KeyboardHandler {
             meta: false
         }, {
             handler: () => {
-                if (window.app) {
-                    const name = prompt('Project name:');
-                    if (name) {
-                        const workflowType = confirm('Use UX-Only workflow? (Click OK for UX-Only, Cancel for Full)') ? 'ux-only' : 'full';
-                        window.app.createProject(name, '', workflowType);
-                        window.app.renderingEngine.renderAll();
+                const name = prompt('Project name:');
+                if (name) {
+                    const workflowType = confirm('Use UX-Only workflow? (Click OK for UX-Only, Cancel for Full)') ? 'ux-only' : 'full';
+                    if (this.projectManager) {
+                        this.projectManager.createProject(name, '', workflowType);
+                        if (this.renderingEngine) {
+                            this.renderingEngine.renderAll();
+                        }
                     }
                 }
             },
@@ -46,12 +54,13 @@ class KeyboardHandler {
             meta: false
         }, {
             handler: () => {
-                if (window.app) {
-                    const activeProject = this.stateManager.getActiveProject();
-                    if (activeProject && window.app.renderingEngine.activeSectionId) {
-                        const prev = window.app.getPreviousSection(activeProject.id, window.app.renderingEngine.activeSectionId);
-                        if (prev) {
-                            window.app.navigateToSection(activeProject.id, prev.id);
+                const activeProject = this.stateManager.getActiveProject();
+                if (activeProject && this.renderingEngine && this.renderingEngine.activeSectionId) {
+                    const navigationService = this.appInstance?.navigationService;
+                    if (navigationService) {
+                        const prev = navigationService.getPreviousSection(activeProject.id, this.renderingEngine.activeSectionId);
+                        if (prev && this.sectionManager) {
+                            this.sectionManager.navigateToSection(activeProject.id, prev.id || prev.sectionId);
                         }
                     }
                 }
@@ -68,13 +77,15 @@ class KeyboardHandler {
             meta: false
         }, {
             handler: () => {
-                if (window.app) {
-                    const activeProject = this.stateManager.getActiveProject();
-                    if (activeProject && window.app.renderingEngine.activeSectionId) {
-                        const next = window.app.getNextSection(activeProject.id, window.app.renderingEngine.activeSectionId);
-                        if (next) {
-                            window.app.navigateToSection(activeProject.id, next.sectionId);
-                        }
+                const activeProject = this.stateManager.getActiveProject();
+                if (activeProject && this.renderingEngine && this.renderingEngine.activeSectionId) {
+                    const navigationService = this.appInstance?.navigationService;
+                    if (navigationService) {
+                        navigationService.getNextSection(activeProject.id, this.renderingEngine.activeSectionId).then(next => {
+                            if (next && this.sectionManager) {
+                                this.sectionManager.navigateToSection(activeProject.id, next.sectionId || next.id);
+                            }
+                        });
                     }
                 }
             },
@@ -91,10 +102,10 @@ class KeyboardHandler {
             meta: false
         }, {
             handler: () => {
-                if (window.app) {
-                    const activeProject = this.stateManager.getActiveProject();
-                    if (activeProject && window.app.renderingEngine.activeSectionId) {
-                        window.app.showModifierEditorModal(activeProject.id, window.app.renderingEngine.activeSectionId);
+                const activeProject = this.stateManager.getActiveProject();
+                if (activeProject && this.renderingEngine && this.renderingEngine.activeSectionId) {
+                    if (this.appInstance && this.appInstance.showModifierEditorModal) {
+                        this.appInstance.showModifierEditorModal(activeProject.id, this.renderingEngine.activeSectionId);
                     }
                 }
             },
@@ -111,10 +122,10 @@ class KeyboardHandler {
             meta: false
         }, {
             handler: () => {
-                if (window.app) {
-                    const activeProject = this.stateManager.getActiveProject();
-                    if (activeProject && window.app.renderingEngine.activeSectionId) {
-                        window.app.invokeProcessStep(activeProject.id, window.app.renderingEngine.activeSectionId, 'validation-loop');
+                const activeProject = this.stateManager.getActiveProject();
+                if (activeProject && this.renderingEngine && this.renderingEngine.activeSectionId) {
+                    if (this.sectionManager) {
+                        this.sectionManager.invokeProcessStep(activeProject.id, this.renderingEngine.activeSectionId, 'validation-loop');
                     }
                 }
             },

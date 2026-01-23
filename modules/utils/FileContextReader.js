@@ -83,31 +83,69 @@ export async function readScopeFiles(filePaths) {
     for (let i = 0; i < filePaths.length; i += batchSize) {
         const batch = filePaths.slice(i, i + batchSize);
         const promises = batch.map(async (filePath) => {
-            try {
-                const response = await fetch('/api/read', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
+            const errorHandler = window.ErrorHandler || null;
+            
+            if (errorHandler) {
+                const result = await errorHandler.handleAsyncWithRetry(
+                    async () => {
+                        const response = await fetch('/api/read', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ filePath })
+                        });
+                        
+                        if (!response.ok) {
+                            const error = await response.text();
+                            throw new Error(error || `Server error: ${response.status}`);
+                        }
+                        
+                        const result = await response.json();
+                        if (result.success && result.content !== undefined) {
+                            return { path: filePath, content: result.content };
+                        } else {
+                            throw new Error(result.error || 'Unknown error');
+                        }
                     },
-                    body: JSON.stringify({ filePath })
-                });
+                    { source: 'FileContextReader', operation: 'readScopeFiles', filePath },
+                    { maxRetries: 2, baseDelay: 500 }
+                );
                 
-                if (!response.ok) {
-                    const error = await response.text();
-                    errors.push({ path: filePath, error: error || 'Failed to read file' });
+                if (!result.success) {
+                    errors.push({ path: filePath, error: result.error || 'Failed to read file' });
                     return null;
                 }
                 
-                const result = await response.json();
-                if (result.success && result.content !== undefined) {
-                    return { path: filePath, content: result.content };
-                } else {
-                    errors.push({ path: filePath, error: result.error || 'Unknown error' });
+                return result.data;
+            } else {
+                // Fallback to original logic
+                try {
+                    const response = await fetch('/api/read', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ filePath })
+                    });
+                    
+                    if (!response.ok) {
+                        const error = await response.text();
+                        errors.push({ path: filePath, error: error || 'Failed to read file' });
+                        return null;
+                    }
+                    
+                    const result = await response.json();
+                    if (result.success && result.content !== undefined) {
+                        return { path: filePath, content: result.content };
+                    } else {
+                        errors.push({ path: filePath, error: result.error || 'Unknown error' });
+                        return null;
+                    }
+                } catch (error) {
+                    errors.push({ path: filePath, error: error.message || 'Network error' });
                     return null;
                 }
-            } catch (error) {
-                errors.push({ path: filePath, error: error.message || 'Network error' });
-                return null;
             }
         });
         
@@ -116,7 +154,27 @@ export async function readScopeFiles(filePaths) {
     }
     
     if (results.length === 0 && errors.length > 0) {
+        const errorHandler = window.ErrorHandler || null;
+        if (errorHandler) {
+            errorHandler.showUserNotification(
+                `Failed to read all files: ${errors[0].error}`,
+                { source: 'FileContextReader', operation: 'readScopeFiles' },
+                { severity: ErrorHandler.Severity.ERROR, title: 'File Read Failed' }
+            );
+        }
         return { success: false, error: `Failed to read files: ${errors[0].error}` };
+    }
+    
+    // Show notification if some files failed but some succeeded
+    if (errors.length > 0) {
+        const errorHandler = window.ErrorHandler || null;
+        if (errorHandler) {
+            errorHandler.showUserNotification(
+                `${errors.length} file(s) failed to read. Partial results returned.`,
+                { source: 'FileContextReader', operation: 'readScopeFiles', failedFiles: errors.length },
+                { severity: ErrorHandler.Severity.WARNING, title: 'Partial File Read' }
+            );
+        }
     }
     
     return {

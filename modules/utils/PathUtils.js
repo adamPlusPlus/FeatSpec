@@ -111,3 +111,53 @@ export function validate(path, rootPath) {
     return { valid: true };
 }
 
+/**
+ * Resolves a path relative to a base path
+ * @param {string} basePath - The base path
+ * @param {...string} paths - Path segments to resolve
+ * @returns {string} Resolved path
+ */
+export function resolve(basePath, ...paths) {
+    if (!basePath) return '';
+    
+    const normalizedBase = normalize(basePath);
+    const allPaths = [normalizedBase, ...paths.map(p => normalize(p))].filter(p => p);
+    
+    if (allPaths.length === 0) return '';
+    if (allPaths.length === 1) return allPaths[0];
+    
+    let result = allPaths[0];
+    for (let i = 1; i < allPaths.length; i++) {
+        const segment = allPaths[i];
+        if (segment.startsWith('/')) {
+            result = segment;
+        } else {
+            result = result.replace(/\/$/, '') + '/' + segment;
+        }
+    }
+    
+    return normalize(result);
+}
+
+/**
+ * Sanitizes a path by removing dangerous components
+ * @param {string} path - The path to sanitize
+ * @returns {string} Sanitized path
+ */
+export function sanitize(path) {
+    if (!path) return '';
+    
+    // Remove null bytes
+    let sanitized = path.replace(/\0/g, '');
+    
+    // Remove dangerous patterns (.., //, etc.)
+    sanitized = sanitized.replace(/\.\./g, '');
+    sanitized = sanitized.replace(/\/\/+/g, '/');
+    
+    // Remove leading/trailing whitespace
+    sanitized = sanitized.trim();
+    
+    // Normalize
+    return normalize(sanitized);
+}
+

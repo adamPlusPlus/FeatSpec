@@ -7,14 +7,33 @@ const { URL } = require('url');
 const { exec, execFile, spawn } = require('child_process');
 const { promisify } = require('util');
 const execPromise = promisify(exec);
+const PathService = require('./server/utils/PathService');
+const ServerErrorHandler = require('./server/utils/ServerErrorHandler');
 
 const PORT = process.env.PORT || 8050;
+
+// Initialize server error handler
+const errorHandler = new ServerErrorHandler();
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const SAVED_FILES_DIR = path.join(__dirname, 'saved-files');
 
-// Handle Windows path separators
+// Server-side constants (matching client-side AppConstants)
+const SERVER_CONSTANTS = {
+    TIMEOUTS: {
+        CURSOR_CLI_TIMEOUT: 300000,      // 5 minutes
+        SERVER_OPERATION_DELAY: 100       // 100ms
+    },
+    BUFFERS: {
+        CURSOR_CLI_MAX: 10 * 1024 * 1024  // 10MB
+    }
+};
+
+// Initialize PathService
+const pathService = new PathService(PROJECT_ROOT);
+
+// Handle Windows path separators (legacy function, now uses PathService)
 function normalizePath(p) {
-    return p.replace(/\\/g, '/');
+    return pathService.normalize(p);
 }
 
 // Ensure saved-files directory exists
@@ -41,8 +60,11 @@ function serveFile(filePath, res) {
     
     fs.readFile(filePath, (err, data) => {
         if (err) {
-            res.writeHead(404, { 'Content-Type': 'text/plain' });
-            res.end('File not found');
+            errorHandler.sendErrorResponse(res, err, {
+                source: 'Server',
+                operation: 'serveFile',
+                filePath: filePath
+            }, 404);
             return;
         }
         res.writeHead(200, { 'Content-Type': contentType });
@@ -52,7 +74,13 @@ function serveFile(filePath, res) {
 
 // Watch a directory for file changes
 function watchDirectory(dirPath, projectId, sectionId) {
-    const normalizedPath = path.resolve(PROJECT_ROOT, dirPath);
+    // Validate path using PathService
+    const validation = pathService.validate(dirPath);
+    if (!validation.valid) {
+        return { error: validation.error || 'Access denied' };
+    }
+    
+    const normalizedPath = validation.path;
     const key = `${projectId}:${sectionId}:${normalizedPath}`;
     
     if (!fs.existsSync(normalizedPath)) {
@@ -108,7 +136,13 @@ function watchDirectory(dirPath, projectId, sectionId) {
 
 // Get file list and states for a directory
 function getDirectoryFiles(dirPath) {
-    const normalizedPath = path.resolve(PROJECT_ROOT, dirPath);
+    // Validate path using PathService
+    const validation = pathService.validate(dirPath);
+    if (!validation.valid) {
+        return { error: validation.error || 'Access denied' };
+    }
+    
+    const normalizedPath = validation.path;
     
     if (!fs.existsSync(normalizedPath)) {
         return { error: 'Directory does not exist' };
@@ -174,12 +208,62 @@ function stopWatching(key) {
     return { error: 'Watcher not found' };
 }
 
+// Server-side constants for validation
+const SERVER_VALIDATION = {
+    MAX_FILENAME_LENGTH: 255,
+    MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB
+    MAX_REQUEST_BODY_SIZE: 11 * 1024 * 1024, // 11MB (slightly larger than max file)
+    ALLOWED_FILE_EXTENSIONS: ['.json', '.md', '.txt'],
+    BLOCKED_EXTENSIONS: ['.exe', '.sh', '.bat', '.cmd', '.ps1', '.js', '.html']
+};
+
 // Save file to server
 function saveFileToServer(filename, content) {
     try {
-        // Sanitize filename
-        const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+        // Validate filename
+        if (!filename || typeof filename !== 'string') {
+            return { success: false, error: 'Invalid filename' };
+        }
+        
+        const trimmed = filename.trim();
+        if (trimmed.length === 0) {
+            return { success: false, error: 'Filename cannot be empty' };
+        }
+        
+        if (trimmed.length > SERVER_VALIDATION.MAX_FILENAME_LENGTH) {
+            return { success: false, error: 'Filename too long' };
+        }
+        
+        // Reject path separators
+        if (trimmed.includes('/') || trimmed.includes('\\')) {
+            return { success: false, error: 'Filename cannot contain path separators' };
+        }
+        
+        // Reject parent directory references
+        if (trimmed.includes('..')) {
+            return { success: false, error: 'Filename cannot contain parent directory references' };
+        }
+        
+        // Reject control characters
+        if (/[\x00-\x1f<>:"|?*]/.test(trimmed)) {
+            return { success: false, error: 'Filename contains invalid characters' };
+        }
+        
+        // Validate file extension
+        const ext = path.extname(trimmed).toLowerCase();
+        if (SERVER_VALIDATION.BLOCKED_EXTENSIONS.includes(ext)) {
+            return { success: false, error: 'File type not allowed' };
+        }
+        
+        // Sanitize filename (strict whitelist)
+        const safeFilename = trimmed.replace(/[^a-zA-Z0-9._-]/g, '_');
         const filePath = path.join(SAVED_FILES_DIR, safeFilename);
+        
+        // Validate content size
+        const contentString = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+        if (contentString.length > SERVER_VALIDATION.MAX_FILE_SIZE) {
+            return { success: false, error: 'File size exceeds maximum allowed size' };
+        }
         
         // Ensure content is a string
         const contentString = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
@@ -187,7 +271,12 @@ function saveFileToServer(filename, content) {
         fs.writeFileSync(filePath, contentString, 'utf8');
         return { success: true, filename: safeFilename, path: filePath };
     } catch (error) {
-        return { success: false, error: error.message };
+        const result = errorHandler.handleError(error, {
+            source: 'Server',
+            operation: 'saveFileToServer',
+            filename: filename
+        });
+        return { success: false, error: result.error, code: result.code };
     }
 }
 
@@ -204,44 +293,36 @@ function executeCursorCLI(prompt, scopeDirectory) {
             }
             
             // Handle scope directory path (could be absolute or relative)
-            let scopePath;
             const scopeDir = scopeDirectory.trim();
             
-            // Normalize the input path first (handle forward/backward slashes)
-            const normalizedInput = scopeDir.replace(/\\/g, '/');
-            
-            // Check if path is absolute (starts with / or drive letter like C:)
-            if (path.isAbsolute(scopeDir) || normalizedInput.match(/^[A-Za-z]:/)) {
-                // Already absolute - use as-is but verify it's within project root
+            // Use PathService to resolve and normalize
+            let scopePath;
+            if (pathService.isAbsolute(scopeDir)) {
+                // Already absolute - validate it exists and is accessible
                 scopePath = path.resolve(scopeDir);
+                // For chat system, allow scope directories outside project root (read-only context)
+                // But validate the path exists
+                if (!fs.existsSync(scopePath)) {
+                    reject(new Error('Scope directory does not exist'));
+                    return;
+                }
             } else {
-                // Relative path - resolve relative to PROJECT_ROOT
-                scopePath = path.resolve(PROJECT_ROOT, scopeDir);
+                // Relative path - validate using PathService
+                const validation = pathService.validate(scopeDir);
+                if (!validation.valid) {
+                    reject(new Error(validation.error || 'Invalid scope directory path'));
+                    return;
+                }
+                scopePath = validation.path;
             }
             
-            // Normalize both paths for comparison (handle Windows case sensitivity and separators)
-            // Use path.resolve to get absolute paths, then normalize
-            const absScopePath = path.resolve(scopePath);
-            const absProjectRoot = path.resolve(PROJECT_ROOT);
-            
-            // Convert to normalized strings for comparison
-            const normalizedScopePath = absScopePath.replace(/\\/g, '/').toLowerCase();
-            const normalizedProjectRoot = absProjectRoot.replace(/\\/g, '/').toLowerCase();
-            
-            // For chat system, allow scope directories outside project root (read-only context)
-            // But still validate that the path exists and is accessible
-            const isWithinProjectRoot = normalizedScopePath.startsWith(normalizedProjectRoot);
-            
-            if (!isWithinProjectRoot) {
-                // Path is outside project root - this is allowed for chat scope directories
-                // but we still need to validate it exists and is accessible
-                console.log(`[Cursor CLI] Scope directory is outside project root (allowed for chat): ${absScopePath}`);
-            } else {
-                console.log(`[Cursor CLI] Path validation passed: ${absScopePath} is within ${absProjectRoot}`);
+            // Validate path exists
+            if (!fs.existsSync(scopePath)) {
+                reject(new Error('Scope directory does not exist'));
+                return;
             }
             
-            // Use the absolute resolved path
-            scopePath = absScopePath;
+            console.log(`[Cursor CLI] Path validation passed: ${scopePath}`);
             
             // Check if scope directory exists
             if (!fs.existsSync(scopePath) || !fs.statSync(scopePath).isDirectory()) {
@@ -426,7 +507,7 @@ function executeCursorCLI(prompt, scopeDirectory) {
                         cursorProcess.kill();
                         reject(new Error('Cursor CLI timeout after 5 minutes'));
                     }
-                }, 300000);
+                }, SERVER_CONSTANTS.TIMEOUTS.CURSOR_CLI_TIMEOUT);
                 return; // Early return for native path
             }
             
@@ -457,33 +538,59 @@ function executeCursorCLI(prompt, scopeDirectory) {
 // Save file to automation directory
 function saveAutomationFile(filePath, content) {
     try {
-        // Resolve the path relative to PROJECT_ROOT
-        const targetPath = path.resolve(PROJECT_ROOT, filePath.trim());
-        
-        // Security: ensure path is within project root
-        if (!targetPath.startsWith(PROJECT_ROOT)) {
-            return { success: false, error: 'Access denied' };
+        // Use PathService to resolve and validate path
+        const validation = pathService.validate(filePath.trim());
+        if (!validation.valid) {
+            return { success: false, error: validation.error || 'Access denied' };
         }
         
-        // Ensure the directory exists
+        const targetPath = validation.path;
+        
+        // Ensure the directory exists using PathService
         const dirPath = path.dirname(targetPath);
-        if (!fs.existsSync(dirPath)) {
-            fs.mkdirSync(dirPath, { recursive: true });
+        const dirResult = pathService.ensureDirectory(dirPath);
+        if (!dirResult.success) {
+            return { success: false, error: dirResult.error || 'Failed to create directory' };
         }
         
         // Ensure content is a string
         const contentString = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
         
+        // Validate content size
+        if (contentString.length > SERVER_VALIDATION.MAX_FILE_SIZE) {
+            return { success: false, error: 'File size exceeds maximum allowed size' };
+        }
+        
+        // Validate file extension
+        const ext = path.extname(filePath).toLowerCase();
+        if (SERVER_VALIDATION.BLOCKED_EXTENSIONS.includes(ext)) {
+            return { success: false, error: 'File type not allowed' };
+        }
+        
+        // Validate JSON structure if file is .json
+        if (ext === '.json') {
+            try {
+                JSON.parse(contentString);
+            } catch (parseError) {
+                return { success: false, error: 'Invalid JSON content' };
+            }
+        }
+        
         // Write the file
         fs.writeFileSync(targetPath, contentString, 'utf8');
         
-        // Return relative path from project root
-        const relativePath = path.relative(PROJECT_ROOT, targetPath);
-        const normalizedPath = normalizePath(relativePath);
+        // Return relative path from project root (normalized)
+        const relativePath = pathService.getRelative(targetPath);
+        const normalizedPath = pathService.normalize(relativePath);
         
         return { success: true, path: normalizedPath };
     } catch (error) {
-        return { success: false, error: error.message };
+        const result = errorHandler.handleError(error, {
+            source: 'Server',
+            operation: 'saveFileToServer',
+            filename: filename
+        });
+        return { success: false, error: result.error, code: result.code };
     }
 }
 
@@ -513,8 +620,22 @@ function listSavedFiles() {
 // Load file from server
 function loadFileFromServer(filename) {
     try {
-        // Sanitize filename
-        const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+        // Validate filename (same validation as saveFileToServer)
+        if (!filename || typeof filename !== 'string') {
+            return { success: false, error: 'Invalid filename' };
+        }
+        
+        const trimmed = filename.trim();
+        if (trimmed.length === 0 || trimmed.length > SERVER_VALIDATION.MAX_FILENAME_LENGTH) {
+            return { success: false, error: 'Invalid filename' };
+        }
+        
+        if (trimmed.includes('/') || trimmed.includes('\\') || trimmed.includes('..')) {
+            return { success: false, error: 'Invalid filename' };
+        }
+        
+        // Sanitize filename (strict whitelist)
+        const safeFilename = trimmed.replace(/[^a-zA-Z0-9._-]/g, '_');
         const filePath = path.join(SAVED_FILES_DIR, safeFilename);
         
         // Security: ensure file is within saved-files directory
@@ -539,7 +660,12 @@ function loadFileFromServer(filename) {
             modified: stats.mtime.toISOString()
         };
     } catch (error) {
-        return { success: false, error: error.message };
+        const result = errorHandler.handleError(error, {
+            source: 'Server',
+            operation: 'saveFileToServer',
+            filename: filename
+        });
+        return { success: false, error: result.error, code: result.code };
     }
 }
 
@@ -594,7 +720,12 @@ function createAutomationDirectory(caseSlug, defaultDir = null) {
             dirName: dirName
         };
     } catch (error) {
-        return { success: false, error: error.message };
+        const result = errorHandler.handleError(error, {
+            source: 'Server',
+            operation: 'saveFileToServer',
+            filename: filename
+        });
+        return { success: false, error: result.error, code: result.code };
     }
 }
 
@@ -605,55 +736,33 @@ function ensureDirectoryExists(dirPath) {
             return { success: false, error: 'Directory path is required' };
         }
         
-        // Normalize backslashes to forward slashes for Windows paths
-        let normalizedInput = dirPath.trim().replace(/\\/g, '/');
+        // Use PathService to ensure directory exists
+        const result = pathService.ensureDirectory(dirPath.trim());
         
-        // Check if it's an absolute path (starts with drive letter like H:/ or C:/, or starts with /)
-        // On Windows, absolute paths can be H:/... or H:\... or /... (UNC paths)
-        const isAbsolute = /^([A-Z]:\/|\/)/.test(normalizedInput);
-        let targetPath;
-        
-        if (isAbsolute) {
-            // For absolute paths, convert to platform-specific separators
-            // Node.js path functions handle both, but we normalize for consistency
-            targetPath = normalizedInput.replace(/\//g, path.sep);
-            // Verify it's actually absolute (path.isAbsolute works with platform-specific separators)
-            if (!path.isAbsolute(targetPath)) {
-                // If path.isAbsolute doesn't recognize it, try path.resolve
-                targetPath = path.resolve(targetPath);
-            }
-        } else {
-            // For relative paths, resolve relative to PROJECT_ROOT
-            targetPath = path.resolve(PROJECT_ROOT, normalizedInput.replace(/\//g, path.sep));
-            
-            // Security: ensure relative paths are within project root
-            if (!targetPath.startsWith(PROJECT_ROOT)) {
-                return { success: false, error: 'Access denied: Path must be within project root' };
-            }
+        if (!result.success) {
+            return result;
         }
         
-        // Create directory if it doesn't exist
-        if (!fs.existsSync(targetPath)) {
-            try {
-                fs.mkdirSync(targetPath, { recursive: true });
-            } catch (mkdirError) {
-                // If directory creation fails, it might be a permissions issue
-                return { success: false, error: `Failed to create directory: ${mkdirError.message}` };
-            }
-        } else if (!fs.statSync(targetPath).isDirectory()) {
+        // Get absolute path for return value
+        const absolutePath = pathService.resolve(dirPath.trim());
+        
+        // Verify it's actually a directory
+        if (fs.existsSync(absolutePath) && !fs.statSync(absolutePath).isDirectory()) {
             return { success: false, error: 'Path exists but is not a directory' };
         }
         
-        // Return normalized path (use forward slashes for consistency)
-        const normalizedPath = normalizePath(isAbsolute ? targetPath : path.relative(PROJECT_ROOT, targetPath));
-        
         return {
             success: true,
-            path: normalizedPath,
-            absolutePath: targetPath
+            path: result.path,
+            absolutePath: absolutePath
         };
     } catch (error) {
-        return { success: false, error: error.message };
+        const result = errorHandler.handleError(error, {
+            source: 'Server',
+            operation: 'saveFileToServer',
+            filename: filename
+        });
+        return { success: false, error: result.error, code: result.code };
     }
 }
 
@@ -664,13 +773,13 @@ function listDirectoryFiles(dirPath) {
             return { success: false, error: 'Directory path is required' };
         }
         
-        // Resolve the path relative to PROJECT_ROOT
-        const targetPath = path.resolve(PROJECT_ROOT, dirPath.trim());
-        
-        // Security: ensure path is within project root
-        if (!targetPath.startsWith(PROJECT_ROOT)) {
-            return { success: false, error: 'Access denied' };
+        // Validate path using PathService
+        const validation = pathService.validate(dirPath.trim());
+        if (!validation.valid) {
+            return { success: false, error: validation.error || 'Access denied' };
         }
+        
+        const targetPath = validation.path;
         
         if (!fs.existsSync(targetPath) || !fs.statSync(targetPath).isDirectory()) {
             return { success: false, error: 'Directory does not exist' };
@@ -686,7 +795,12 @@ function listDirectoryFiles(dirPath) {
             path: targetPath
         };
     } catch (error) {
-        return { success: false, error: error.message };
+        const result = errorHandler.handleError(error, {
+            source: 'Server',
+            operation: 'saveFileToServer',
+            filename: filename
+        });
+        return { success: false, error: result.error, code: result.code };
     }
 }
 
@@ -781,7 +895,12 @@ function listScopeFilesRecursive(scopeDirectory, maxDepth = 10) {
             count: files.length
         };
     } catch (error) {
-        return { success: false, error: error.message };
+        const result = errorHandler.handleError(error, {
+            source: 'Server',
+            operation: 'saveFileToServer',
+            filename: filename
+        });
+        return { success: false, error: result.error, code: result.code };
     }
 }
 
@@ -834,7 +953,12 @@ function moveFilesBetweenDirectories(sourceDir, targetDir, fileNames) {
             errors: errors
         };
     } catch (error) {
-        return { success: false, error: error.message };
+        const result = errorHandler.handleError(error, {
+            source: 'Server',
+            operation: 'saveFileToServer',
+            filename: filename
+        });
+        return { success: false, error: result.error, code: result.code };
     }
 }
 
@@ -919,7 +1043,7 @@ function openDirectoryInFileBrowser(dirPath) {
                     // Give it a moment to start, then resolve
                     setTimeout(() => {
                         resolve({ success: true, path: targetPath });
-                    }, 100);
+                    }, SERVER_CONSTANTS.TIMEOUTS.SERVER_OPERATION_DELAY);
                 } catch (error) {
                     resolve({ success: false, error: error.message });
                 }
@@ -989,7 +1113,12 @@ function deleteFileFromServer(filenameOrPath) {
             path: filePath
         };
     } catch (error) {
-        return { success: false, error: error.message };
+        const result = errorHandler.handleError(error, {
+            source: 'Server',
+            operation: 'saveFileToServer',
+            filename: filename
+        });
+        return { success: false, error: result.error, code: result.code };
     }
 }
 
@@ -999,6 +1128,12 @@ const server = http.createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    
+    // Content Security Policy headers
+    const cspHeader = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self';";
+    res.setHeader('Content-Security-Policy', cspHeader);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
     
     if (req.method === 'OPTIONS') {
         res.writeHead(200);
@@ -1014,13 +1149,18 @@ const server = http.createServer((req, res) => {
     if (pathname.startsWith('/api/')) {
         // Handle GET requests for /api/list-files
         if (pathname === '/api/list-files' && req.method === 'GET') {
-            try {
-                const result = listSavedFiles();
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify(result));
-            } catch (err) {
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: err.message }));
+            const result = errorHandler.handleSync(() => listSavedFiles(), {
+                source: 'Server',
+                operation: 'list-files',
+                method: req.method
+            });
+            if (result.success) {
+                errorHandler.sendSuccessResponse(res, result.data);
+            } else {
+                errorHandler.sendErrorResponse(res, result.error, {
+                    source: 'Server',
+                    operation: 'list-files'
+                });
             }
             return;
         }
@@ -1051,29 +1191,73 @@ const server = http.createServer((req, res) => {
                         // Normalize path separators
                         const normalizedPath = normalizePath(filePath);
                         const result = readFile(normalizedPath);
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify(result));
+                        if (result.success) {
+                            errorHandler.sendSuccessResponse(res, result);
+                        } else {
+                            errorHandler.sendErrorResponse(res, result.error, {
+                                source: 'Server',
+                                operation: 'read-file',
+                                filePath: normalizedPath
+                            }, result.error.includes('not found') ? 404 : 500);
+                        }
                     } else if (pathname === '/api/stop-watch') {
                         const { key } = data;
+                        // Validate key parameter
+                        if (!key || typeof key !== 'string') {
+                            errorHandler.sendErrorResponse(res, 'Key parameter is required', {
+                                source: 'Server',
+                                operation: 'stop-watch',
+                                pathname
+                            }, 400);
+                            return;
+                        }
                         const result = stopWatching(key);
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify(result));
+                        if (result.error) {
+                            errorHandler.sendErrorResponse(res, result.error, {
+                                source: 'Server',
+                                operation: 'stop-watch',
+                                key
+                            }, 404);
+                        } else {
+                            errorHandler.sendSuccessResponse(res, result);
+                        }
                     } else if (pathname === '/api/save-file') {
                         const { filename, content } = data;
                         const result = saveFileToServer(filename, content);
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify(result));
+                        if (result.success) {
+                            errorHandler.sendSuccessResponse(res, result);
+                        } else {
+                            errorHandler.sendErrorResponse(res, result.error, {
+                                source: 'Server',
+                                operation: 'save-file',
+                                filename: filename
+                            });
+                        }
                     } else if (pathname === '/api/load-file') {
                         const { filename } = data;
                         const result = loadFileFromServer(filename);
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify(result));
+                        if (result.success) {
+                            errorHandler.sendSuccessResponse(res, result);
+                        } else {
+                            errorHandler.sendErrorResponse(res, result.error, {
+                                source: 'Server',
+                                operation: 'load-file',
+                                filename: filename
+                            }, result.error.includes('not found') ? 404 : 500);
+                        }
                     } else if (pathname === '/api/delete-file') {
                         const { filename, filePath } = data;
                         // Support both filename (for saved-files) and filePath (for automation directories)
                         const result = deleteFileFromServer(filePath || filename);
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify(result));
+                        if (result.success) {
+                            errorHandler.sendSuccessResponse(res, result);
+                        } else {
+                            errorHandler.sendErrorResponse(res, result.error, {
+                                source: 'Server',
+                                operation: 'delete-file',
+                                filename: filename || filePath
+                            }, result.error.includes('not found') ? 404 : 500);
+                        }
                     } else if (pathname === '/api/create-directory') {
                         const { caseSlug, defaultDir } = data;
                         const result = createAutomationDirectory(caseSlug, defaultDir);
@@ -1088,9 +1272,25 @@ const server = http.createServer((req, res) => {
                         return; // Don't continue processing
                     } else if (pathname === '/api/ensure-directory') {
                         const { dirPath } = data;
+                        // Validate dirPath parameter
+                        if (!dirPath || typeof dirPath !== 'string') {
+                            errorHandler.sendErrorResponse(res, 'dirPath parameter is required', {
+                                source: 'Server',
+                                operation: 'ensure-directory',
+                                pathname
+                            }, 400);
+                            return;
+                        }
                         const result = ensureDirectoryExists(dirPath);
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify(result));
+                        if (result.success) {
+                            errorHandler.sendSuccessResponse(res, result);
+                        } else {
+                            errorHandler.sendErrorResponse(res, result.error, {
+                                source: 'Server',
+                                operation: 'ensure-directory',
+                                dirPath
+                            });
+                        }
                     } else if (pathname === '/api/list-directory') {
                         const { dirPath } = data;
                         const result = listDirectoryFiles(dirPath);
@@ -1104,13 +1304,40 @@ const server = http.createServer((req, res) => {
                     } else if (pathname === '/api/save-automation-file') {
                         const { filePath, content } = data;
                         const result = saveAutomationFile(filePath, content);
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify(result));
+                        if (result.success) {
+                            errorHandler.sendSuccessResponse(res, result);
+                        } else {
+                            errorHandler.sendErrorResponse(res, result.error, {
+                                source: 'Server',
+                                operation: 'save-automation-file',
+                                filePath: filePath
+                            });
+                        }
                     } else if (pathname === '/api/list-scope-files') {
                         const { scopeDirectory, maxDepth } = data;
-                        const result = listScopeFilesRecursive(scopeDirectory, maxDepth || 10);
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify(result));
+                        // Validate scopeDirectory parameter
+                        if (!scopeDirectory || typeof scopeDirectory !== 'string') {
+                            errorHandler.sendErrorResponse(res, 'scopeDirectory parameter is required', {
+                                source: 'Server',
+                                operation: 'list-scope-files',
+                                pathname
+                            }, 400);
+                            return;
+                        }
+                        // Validate maxDepth
+                        const depth = maxDepth && typeof maxDepth === 'number' && maxDepth > 0 && maxDepth <= 20 
+                            ? maxDepth 
+                            : 10;
+                        const result = listScopeFilesRecursive(scopeDirectory, depth);
+                        if (result.success) {
+                            errorHandler.sendSuccessResponse(res, result);
+                        } else {
+                            errorHandler.sendErrorResponse(res, result.error, {
+                                source: 'Server',
+                                operation: 'list-scope-files',
+                                scopeDirectory
+                            });
+                        }
                     } else if (pathname === '/api/cursor-cli-execute') {
                         console.log('[API] /api/cursor-cli-execute called');
                         const { prompt, scopeDirectory } = data;
@@ -1122,20 +1349,26 @@ const server = http.createServer((req, res) => {
                                 res.end(JSON.stringify(result));
                             })
                             .catch(error => {
-                                res.writeHead(500, { 'Content-Type': 'application/json' });
-                                res.end(JSON.stringify({ 
-                                    success: false, 
-                                    error: error.message 
-                                }));
+                                errorHandler.sendErrorResponse(res, error, {
+                                    source: 'Server',
+                                    operation: 'cursor-cli-execute'
+                                });
                             });
                         return; // Don't continue processing
                     } else {
-                        res.writeHead(404, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ error: 'Endpoint not found' }));
+                        errorHandler.sendErrorResponse(res, 'Endpoint not found', {
+                            source: 'Server',
+                            operation: 'api-handler',
+                            pathname: pathname
+                        }, 404);
                     }
                 } catch (err) {
-                    res.writeHead(500, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ error: err.message }));
+                    errorHandler.sendErrorResponse(res, err, {
+                        source: 'Server',
+                        operation: 'api-handler',
+                        pathname: pathname,
+                        method: req.method
+                    });
                 }
             });
             return;

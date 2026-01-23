@@ -72,10 +72,16 @@ export class ChatTabBar {
         
         const displayName = truncateText(name || 'New Chat', 20);
         
-        tabElement.innerHTML = `
+        // displayName is user-controlled (chat name) - escape and use safeSetInnerHTML
+        const tabHtml = `
             <span class="chat-tab-name">${displayName}</span>
             <button class="chat-tab-close" aria-label="Close tab">×</button>
         `;
+        if (typeof window !== 'undefined' && window.safeSetInnerHTML) {
+            window.safeSetInnerHTML(tabElement, tabHtml, { trusted: false });
+        } else {
+            tabElement.innerHTML = tabHtml;
+        }
         
         // Click handler for tab selection
         tabElement.addEventListener('click', (e) => {

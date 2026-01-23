@@ -6,50 +6,191 @@ class PromptSpecApp {
         // Initialize core systems
         this.eventSystem = EventSystem.getInstance();
         this.stateManager = new StateManager(this.eventSystem);
-        this.dataLayer = new DataLayer(this.eventSystem, 'prompt-spec-data');
         this.pointerTracker = new PointerTracker();
         
-        // Initialize interaction handlers
-        this.dragDropHandler = new DragDropHandler(this.eventSystem, this.stateManager, this.pointerTracker);
-        this.contextMenuHandler = new ContextMenuHandler(this.eventSystem, this.stateManager, this.pointerTracker);
-        this.modalSystem = new ModalSystem(this.eventSystem, this.stateManager);
-        this.keyboardHandler = new KeyboardHandler(this.eventSystem, this.stateManager);
-        this.automationSystem = new AutomationSystem(this.eventSystem, this.stateManager);
+        // Initialize StateUpdateHelper
+        this.stateUpdateHelper = new StateUpdateHelper(this.stateManager, this.eventSystem);
         
-        // Initialize UI
-        this.renderingEngine = new RenderingEngine(this.eventSystem, this.stateManager, this.dragDropHandler);
+        // Initialize interaction handlers
+        this.dragDropHandler = new DragDropHandler(this.eventSystem, this.stateManager, this.pointerTracker, this.errorHandler);
+        this.contextMenuHandler = new ContextMenuHandler(this.eventSystem, this.stateManager, this.pointerTracker, null);
+        this.modalSystem = new ModalSystem(this.eventSystem, this.stateManager);
+        this.keyboardHandler = new KeyboardHandler(this.eventSystem, this.stateManager, {});
+        
+        // Initialize ErrorHandler (after modalSystem for integration)
+        this.errorHandler = new ErrorHandler(this.eventSystem, { modalSystem: this.modalSystem });
+        // Make ErrorHandler available globally for modules that need it
+        window.ErrorHandler = ErrorHandler;
+        
+        this.dataLayer = new DataLayer(this.eventSystem, this.errorHandler, 'prompt-spec-data');
+        
+        // Initialize services
+        const pipelineConfig = window.PipelineConfig;
+        const promptLoader = window.PromptLoader;
+        
+        this.sectionLogicService = new SectionLogicService(this.stateManager, pipelineConfig);
+        this.navigationService = new NavigationService(this.stateManager, pipelineConfig);
+        this.caseInfoService = new CaseInfoService();
+        this.workflowContextService = new WorkflowContextService(this.stateManager);
+        this.processStepService = new ProcessStepService(pipelineConfig);
+        this.placeholderService = new PlaceholderService(promptLoader);
+        this.automationOrchestrator = new AutomationOrchestrator(this.stateManager, pipelineConfig, this.eventSystem, this.stateUpdateHelper);
+        
+        // Initialize managers
+        this.projectManager = new ProjectManager(this.stateManager, this.eventSystem, this.dataLayer, null, pipelineConfig, this.stateUpdateHelper, this.errorHandler);
+        this.sectionManager = new SectionManager(this.stateManager, this.eventSystem, null, this.modalSystem, this.navigationService, pipelineConfig, this.stateUpdateHelper, this.errorHandler);
+        this.fileOperations = new FileOperations(this.stateManager, this.eventSystem, this.dataLayer, null, this.errorHandler);
+        this.uiManager = new UIManager(this.stateManager, this.eventSystem, this.modalSystem, null, this.contextMenuHandler, this.keyboardHandler, this.stateUpdateHelper);
+        
+        // Initialize automation system with orchestrator and projectManager
+        this.automationSystem = new AutomationSystem(this.eventSystem, this.stateManager, this.automationOrchestrator, this.projectManager, this.errorHandler);
+        
+        // Initialize UI with services and managers
+        const services = {
+            sectionLogic: this.sectionLogicService,
+            navigation: this.navigationService,
+            caseInfo: this.caseInfoService,
+            workflowContext: this.workflowContextService,
+            processSteps: this.processStepService,
+            placeholder: this.placeholderService
+        };
+        const managersForRendering = {
+            projectManager: this.projectManager,
+            sectionManager: this.sectionManager,
+            uiManager: this.uiManager,
+            appInstance: this, // For methods not yet in managers
+            multiAgentAutomation: null // Will be set after initialization
+        };
+        this.renderingEngine = new RenderingEngine(this.eventSystem, this.stateManager, this.dragDropHandler, services, managersForRendering, this.errorHandler);
+        
+        // Update managers with renderingEngine references
+        this.projectManager.renderingEngine = this.renderingEngine;
+        this.sectionManager.renderingEngine = this.renderingEngine;
+        this.fileOperations.renderingEngine = this.renderingEngine;
+        this.uiManager.renderingEngine = this.renderingEngine;
+        
+        // Update contextMenuHandler with renderingEngine reference
+        this.contextMenuHandler.renderingEngine = this.renderingEngine;
+        
+        // Update keyboardHandler with managers
+        this.keyboardHandler.projectManager = this.projectManager;
+        this.keyboardHandler.sectionManager = this.sectionManager;
+        this.keyboardHandler.renderingEngine = this.renderingEngine;
+        this.keyboardHandler.appInstance = this;
+        
+        // Set managers on UIManager
+        this.uiManager.setManagers({
+            projectManager: this.projectManager,
+            sectionManager: this.sectionManager,
+            fileOperations: this.fileOperations
+        });
+        
+        // Initialize InitializationManager
+        const managers = {
+            projectManager: this.projectManager,
+            sectionManager: this.sectionManager,
+            fileOperations: this.fileOperations,
+            uiManager: this.uiManager
+        };
+        const servicesObj = {
+            sectionLogic: this.sectionLogicService,
+            navigation: this.navigationService,
+            caseInfo: this.caseInfoService,
+            workflowContext: this.workflowContextService,
+            processSteps: this.processStepService,
+            placeholder: this.placeholderService
+        };
+        this.initializationManager = new InitializationManager(
+            this,
+            this.stateManager,
+            this.eventSystem,
+            this.dataLayer,
+            this.renderingEngine,
+            managers,
+            servicesObj
+        );
+        
+        // Set callbacks on managers
+        this.setupManagerCallbacks();
         
         // Initialize Cursor CLI Automation System (after renderingEngine for dependency)
         this.cursorCLIAutomation = new CursorCLIAutomationSystem(
             this.eventSystem,
             this.stateManager,
-            this.renderingEngine
+            this.renderingEngine,
+            this.errorHandler
         );
         
         // Initialize Multi-Agent Automation System (after renderingEngine for dependency)
         this.multiAgentAutomation = new MultiAgentAutomationSystem(
             this.eventSystem,
             this.stateManager,
+            this.renderingEngine,
+            this.errorHandler
+        );
+            this.eventSystem,
+            this.stateManager,
             this.renderingEngine
         );
         
+        // Update renderingEngine with multiAgentAutomation reference
+        this.renderingEngine.multiAgentAutomation = this.multiAgentAutomation;
+        
         // Initialize Chat System (wait for ES modules to load)
-        this.initializeChatSystem();
+        this.initializationManager.initializeChatSystem();
         
         // Wire event handlers
-        this.setupEventHandlers();
+        this.initializationManager.setupEventHandlers();
         
         // Initialize application
-        this.initialize();
+        this.initializationManager.initialize();
     }
     
-    // Initialize chat system (called after ES modules load)
+    // Setup manager callbacks
+    setupManagerCallbacks() {
+        // ProjectManager callbacks
+        this.projectManager.setCallbacks({
+            loadPromptsForProject: this.loadPromptsForProject.bind(this),
+            addInferenceSteps: this.addInferenceSteps.bind(this),
+            initializeExistingOutputs: this.initializeExistingOutputs?.bind(this)
+        });
+        
+        // SectionManager callbacks
+        this.sectionManager.setCallbacks({
+            loadPromptsForProject: this.loadPromptsForProject.bind(this),
+            removeInputGuidanceFromPrompt: this.removeInputGuidanceFromPrompt.bind(this),
+            checkDependencies: this.checkDependencies.bind(this)
+        });
+        
+        // FileOperations callbacks
+        this.fileOperations.setCallbacks({
+            parseStructuredOutputs: this.projectManager.parseStructuredOutputs.bind(this.projectManager)
+        });
+        
+        // UIManager callbacks
+        this.uiManager.setCallbacks({
+            handleContextMenuAction: this.handleContextMenuAction.bind(this)
+        });
+        this.uiManager.loadPromptsForProjectCallback = this.loadPromptsForProject.bind(this);
+        
+        // InitializationManager callbacks
+        this.initializationManager.setCallbacks({
+            loadPromptsForProject: this.loadPromptsForProject.bind(this),
+            createSampleProject: this.createSampleProject.bind(this),
+            setupChatHandlers: this.setupChatHandlers.bind(this)
+        });
+    }
+    
+    // Initialize chat system (called after ES modules load) - delegates to InitializationManager
     initializeChatSystem() {
+        if (this.initializationManager) {
+            this.initializationManager.initializeChatSystem();
+        }
         // Wait for ChatSystem to be available (ES modules load asynchronously)
         const initChat = () => {
             if (typeof window.ChatSystem !== 'undefined') {
                 try {
-                    this.chatSystem = new window.ChatSystem(this.eventSystem, this.stateManager);
+                    this.chatSystem = new window.ChatSystem(this.eventSystem, this.stateManager, this.errorHandler);
                     
                     // Initialize Chat UI modules
                     const chatWindowElement = document.getElementById('chat-window');
@@ -68,7 +209,7 @@ class PromptSpecApp {
                 }
             } else {
                 // Retry after a short delay
-                setTimeout(initChat, 50);
+                setTimeout(initChat, AppConstants.TIMEOUTS.CHAT_INIT_RETRY);
             }
         };
         
@@ -80,42 +221,25 @@ class PromptSpecApp {
         }
     }
     
-    // Restore last active project from localStorage (device-specific)
+    // Restore last active project from localStorage (device-specific) - delegates to InitializationManager
     restoreLastActiveProject() {
-        try {
-            const lastActiveProjectId = localStorage.getItem('feat-spec-last-active-project');
-            if (lastActiveProjectId) {
-                const state = this.stateManager.getState();
-                // Check if the project still exists
-                const project = state.projects.find(p => p.id === lastActiveProjectId);
-                if (project) {
-                    // Restore the last active project (prioritize device-specific preference)
-                    this.stateManager.setActiveProject(lastActiveProjectId);
-                } else {
-                    // Project no longer exists, clear the saved value
-                    localStorage.removeItem('feat-spec-last-active-project');
-                }
-            }
-        } catch (error) {
-            console.warn('Error restoring last active project:', error);
+        if (this.initializationManager) {
+            this.initializationManager.restoreLastActiveProject();
         }
     }
     
-    // Save last active project to localStorage
+    // Save last active project to localStorage - delegates to InitializationManager
     saveLastActiveProject(projectId) {
-        try {
-            if (projectId) {
-                localStorage.setItem('feat-spec-last-active-project', projectId);
-            } else {
-                localStorage.removeItem('feat-spec-last-active-project');
-            }
-        } catch (error) {
-            console.warn('Error saving last active project:', error);
+        if (this.initializationManager) {
+            this.initializationManager.saveLastActiveProject(projectId);
         }
     }
     
-    // Setup event handlers between modules
+    // Setup event handlers between modules - delegates to InitializationManager
     setupEventHandlers() {
+        if (this.initializationManager) {
+            this.initializationManager.setupEventHandlers();
+        }
         // Save last active project when project is activated
         this.eventSystem.register(window.EventType.PROJECT_ACTIVATED, (event) => {
             const { projectId } = event.data;
@@ -201,8 +325,11 @@ class PromptSpecApp {
         });
     }
     
-    // Initialize application
+    // Initialize application - delegates to InitializationManager
     async initialize() {
+        if (this.initializationManager) {
+            await this.initializationManager.initialize();
+        }
         try {
             // Load saved state
             const savedState = this.dataLayer.loadState();
@@ -269,9 +396,88 @@ class PromptSpecApp {
                 data: {}
             });
         } catch (error) {
-            console.error('Error initializing application:', error);
-            alert('Failed to initialize application: ' + error.message);
+            if (this.errorHandler) {
+                const errorResult = this.errorHandler.handleError(error, {
+                    source: 'PromptSpecApp',
+                    operation: 'initialize'
+                });
+                this.errorHandler.showUserNotification(error, {
+                    source: 'PromptSpecApp',
+                    operation: 'initialize'
+                }, {
+                    severity: ErrorHandler.Severity.CRITICAL,
+                    title: 'Initialization Failed'
+                });
+            } else {
+                console.error('Error initializing application:', error);
+                alert('Failed to initialize application: ' + error.message);
+            }
         }
+    }
+    
+    /**
+     * Migrate a single old project to new format
+     * @private
+     * @returns {Object} Migrated project
+     */
+    async _migrateOldProject(oldProject) {
+        // Map old workflowType to case number
+        let caseNumber = 1; // Default to Case 1
+        if (oldProject.workflowType === 'ux-only') {
+            caseNumber = 2; // UX-only maps to Case 2
+        } else if (oldProject.workflowType === 'full') {
+            caseNumber = 1; // Full maps to Case 1
+        }
+        
+        // Create new project with case
+        const project = await this.stateManager.createProject(
+            oldProject.name || 'Migrated Project',
+            oldProject.description || 'Migrated from old format',
+            caseNumber
+        );
+        
+        // Migrate sections if they exist
+        if (oldProject.sections && Array.isArray(oldProject.sections)) {
+            for (const oldSection of oldProject.sections) {
+                // Find matching section in new project
+                const newSection = project.sections.find(s => 
+                    s.sectionId === oldSection.sectionId || 
+                    s.sectionName === oldSection.sectionName
+                );
+                
+                if (newSection) {
+                    // Migrate section data
+                    this.stateManager.updateSection(project.id, newSection.sectionId, {
+                        input: oldSection.input || '',
+                        output: oldSection.output || '',
+                        notes: oldSection.notes || '',
+                        status: oldSection.status || 'not_started'
+                    });
+                }
+            }
+        }
+        
+        return project;
+    }
+    
+    /**
+     * Migrate old pages format to new project format
+     * @private
+     * @returns {Object} New project created from pages
+     */
+    async _migrateOldPages(oldState) {
+        // Convert pages to projects (legacy format)
+        const firstPage = oldState.pages[0];
+        const project = await this.stateManager.createProject(
+            firstPage.title || 'Migrated Project',
+            'Migrated from old format',
+            1 // Default to Case 1
+        );
+        
+        // Note: Old elements can't be directly mapped to pipeline sections
+        // User will need to manually organize content into sections
+        
+        return project;
     }
     
     // Migrate old data format (pages/elements) to new format (projects/sections)
@@ -294,42 +500,7 @@ class PromptSpecApp {
         // Convert old projects to new format (if they exist)
         if (oldState.projects && Array.isArray(oldState.projects)) {
             for (const oldProject of oldState.projects) {
-                // Map old workflowType to case number
-                let caseNumber = 1; // Default to Case 1
-                if (oldProject.workflowType === 'ux-only') {
-                    caseNumber = 2; // UX-only maps to Case 2
-                } else if (oldProject.workflowType === 'full') {
-                    caseNumber = 1; // Full maps to Case 1
-                }
-                
-                // Create new project with case
-                const project = await this.stateManager.createProject(
-                    oldProject.name || 'Migrated Project',
-                    oldProject.description || 'Migrated from old format',
-                    caseNumber
-                );
-                
-                // Migrate sections if they exist
-                if (oldProject.sections && Array.isArray(oldProject.sections)) {
-                    for (const oldSection of oldProject.sections) {
-                        // Find matching section in new project
-                        const newSection = project.sections.find(s => 
-                            s.sectionId === oldSection.sectionId || 
-                            s.sectionName === oldSection.sectionName
-                        );
-                        
-                        if (newSection) {
-                            // Migrate section data
-                            this.stateManager.updateSection(project.id, newSection.sectionId, {
-                                input: oldSection.input || '',
-                                output: oldSection.output || '',
-                                notes: oldSection.notes || '',
-                                status: oldSection.status || 'not_started'
-                            });
-                        }
-                    }
-                }
-                
+                const project = await this._migrateOldProject(oldProject);
                 newState.projects.push(project);
             }
             
@@ -345,17 +516,7 @@ class PromptSpecApp {
                 newState.activeProjectId = newState.projects[0].id;
             }
         } else if (oldState.pages && Array.isArray(oldState.pages) && oldState.pages.length > 0) {
-            // Convert pages to projects (legacy format)
-            const firstPage = oldState.pages[0];
-            const project = await this.stateManager.createProject(
-                firstPage.title || 'Migrated Project',
-                'Migrated from old format',
-                1 // Default to Case 1
-            );
-            
-            // Note: Old elements can't be directly mapped to pipeline sections
-            // User will need to manually organize content into sections
-            
+            const project = await this._migrateOldPages(oldState);
             newState.projects = [project];
             newState.activeProjectId = project.id;
         }
@@ -390,7 +551,15 @@ class PromptSpecApp {
     }
     
     // Setup UI event listeners (buttons, file operations, etc.)
+    // Setup UI listeners - delegates to UIManager
     setupUIListeners() {
+        if (this.uiManager) {
+            return this.uiManager.setupUIListeners();
+        }
+    }
+    
+    // Legacy setupUIListeners implementation (if needed for fallback)
+    _setupUIListeners() {
         // Pane toggle buttons
         const toggleProjectsSidebar = document.getElementById('toggle-projects-sidebar');
         const toggleProjectsSidebarCollapsed = document.getElementById('toggle-projects-sidebar-collapsed');
@@ -544,7 +713,15 @@ class PromptSpecApp {
     }
     
     // Setup project group dropdown event listeners (can be called multiple times)
+    // Setup project group dropdown listeners - delegates to UIManager
     setupProjectGroupDropdownListeners() {
+        if (this.uiManager) {
+            return this.uiManager.setupProjectGroupDropdownListeners();
+        }
+    }
+    
+    // Legacy setupProjectGroupDropdownListeners implementation (if needed for fallback)
+    _setupProjectGroupDropdownListeners() {
         // Use event delegation on the container to avoid losing listeners when DOM updates
         const container = document.querySelector('.project-group-container');
         if (!container) return;
@@ -593,7 +770,18 @@ class PromptSpecApp {
                     if (!projectGroupName || !projectGroupName.trim()) {
                         const name = prompt('Enter a project group name to save:');
                         if (!name || !name.trim()) {
-                            alert('Project group name is required to save.');
+                            const error = 'Project group name is required to save.';
+                            if (this.errorHandler) {
+                                this.errorHandler.showUserNotification(error, {
+                                    source: 'PromptSpecApp',
+                                    operation: 'saveProjectGroup'
+                                }, {
+                                    severity: ErrorHandler.Severity.WARNING,
+                                    title: 'Project Group Name Required'
+                                });
+                            } else {
+                                alert(error);
+                            }
                             return;
                         }
                         // Save the name to state
@@ -633,8 +821,22 @@ class PromptSpecApp {
                         if (dropdownToggle) dropdownToggle.classList.remove('active');
                     }, 200);
                 } catch (err) {
-                    console.error('Save file error:', err);
-                    alert('Failed to save file: ' + err.message);
+                    if (this.errorHandler) {
+                        this.errorHandler.handleError(err, {
+                            source: 'PromptSpecApp',
+                            operation: 'saveFile'
+                        });
+                        this.errorHandler.showUserNotification(err, {
+                            source: 'PromptSpecApp',
+                            operation: 'saveFile'
+                        }, {
+                            severity: ErrorHandler.Severity.ERROR,
+                            title: 'Save Failed'
+                        });
+                    } else {
+                        console.error('Save file error:', err);
+                        alert('Failed to save file: ' + err.message);
+                    }
                 }
             });
         } else {
@@ -647,7 +849,18 @@ class PromptSpecApp {
             exportProjectBtn.addEventListener('click', () => {
                 const activeProject = this.stateManager.getActiveProject();
                 if (!activeProject) {
-                    alert('No project selected');
+                    const error = 'No project selected';
+                    if (this.errorHandler) {
+                        this.errorHandler.showUserNotification(error, {
+                            source: 'PromptSpecApp',
+                            operation: 'exportProject'
+                        }, {
+                            severity: ErrorHandler.Severity.WARNING,
+                            title: 'No Project Selected'
+                        });
+                    } else {
+                        alert(error);
+                    }
                     return;
                 }
                 const filename = `${activeProject.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.json`;
@@ -675,6 +888,15 @@ class PromptSpecApp {
                             throw new Error('Invalid project format');
                         }
                         
+                        // Validate project name if InputValidator is available
+                        if (window.validateProjectName) {
+                            const nameValidation = window.validateProjectName(project.name);
+                            if (!nameValidation.valid) {
+                                throw new Error(`Invalid project name: ${nameValidation.error}`);
+                            }
+                            project.name = nameValidation.sanitized;
+                        }
+                        
                         // Add project to state
                         const state = this.stateManager.getState();
                         const projects = [...state.projects, project];
@@ -695,7 +917,18 @@ class PromptSpecApp {
             exportFinalSpecBtn.addEventListener('click', () => {
                 const activeProject = this.stateManager.getActiveProject();
                 if (!activeProject) {
-                    alert('No project selected');
+                    const error = 'No project selected';
+                    if (this.errorHandler) {
+                        this.errorHandler.showUserNotification(error, {
+                            source: 'PromptSpecApp',
+                            operation: 'exportProject'
+                        }, {
+                            severity: ErrorHandler.Severity.WARNING,
+                            title: 'No Project Selected'
+                        });
+                    } else {
+                        alert(error);
+                    }
                     return;
                 }
                 
@@ -760,14 +993,49 @@ class PromptSpecApp {
                         for (const project of state.projects) {
                             await this.loadPromptsForProject(project.id);
                         }
-                        alert('Templates reloaded successfully!');
+                        if (this.errorHandler) {
+                            this.errorHandler.showUserNotification('Templates reloaded successfully!', {
+                                source: 'PromptSpecApp',
+                                operation: 'reloadTemplates'
+                            }, {
+                                severity: ErrorHandler.Severity.INFO,
+                                title: 'Success'
+                            });
+                        } else {
+                            alert('Templates reloaded successfully!');
+                        }
                     } else {
-                        alert('PromptLoader not available');
+                        const error = 'PromptLoader not available';
+                        if (this.errorHandler) {
+                            this.errorHandler.showUserNotification(error, {
+                                source: 'PromptSpecApp',
+                                operation: 'reloadTemplates'
+                            }, {
+                                severity: ErrorHandler.Severity.WARNING,
+                                title: 'Reload Failed'
+                            });
+                        } else {
+                            alert(error);
+                        }
                     }
-                } catch (error) {
-                    console.error('Error reloading templates:', error);
-                    alert('Failed to reload templates: ' + error.message);
-                }
+                    } catch (error) {
+                        if (this.errorHandler) {
+                            this.errorHandler.handleError(error, {
+                                source: 'PromptSpecApp',
+                                operation: 'reloadTemplates'
+                            });
+                            this.errorHandler.showUserNotification(error, {
+                                source: 'PromptSpecApp',
+                                operation: 'reloadTemplates'
+                            }, {
+                                severity: ErrorHandler.Severity.ERROR,
+                                title: 'Reload Failed'
+                            });
+                        } else {
+                            console.error('Error reloading templates:', error);
+                            alert('Failed to reload templates: ' + error.message);
+                        }
+                    }
             });
         }
         
@@ -960,7 +1228,18 @@ class PromptSpecApp {
                 }
                 
                 if (!this.automationSystem || !this.automationSystem.isRunning) {
-                    alert('Automation is not running. Please start automation first.');
+                    const error = 'Automation is not running. Please start automation first.';
+                    if (this.errorHandler) {
+                        this.errorHandler.showUserNotification(error, {
+                            source: 'PromptSpecApp',
+                            operation: 'automation'
+                        }, {
+                            severity: ErrorHandler.Severity.WARNING,
+                            title: 'Automation Not Running'
+                        });
+                    } else {
+                        alert(error);
+                    }
                     return;
                 }
                 
@@ -979,7 +1258,18 @@ class PromptSpecApp {
                 
                 // Check if directory is set
                 if (!activeProject.automationDirectory) {
-                    alert('Please set the automation directory in the Pipeline Flow view before starting automation.');
+                    const error = 'Please set the automation directory in the Pipeline Flow view before starting automation.';
+                    if (this.errorHandler) {
+                        this.errorHandler.showUserNotification(error, {
+                            source: 'PromptSpecApp',
+                            operation: 'automation'
+                        }, {
+                            severity: ErrorHandler.Severity.WARNING,
+                            title: 'Automation Directory Required'
+                        });
+                    } else {
+                        alert(error);
+                    }
                     return;
                 }
                 
@@ -1334,16 +1624,25 @@ class PromptSpecApp {
                 html += `
                     <div class="reference-item" data-doc-key="${key}">
                         <h4>${this.escapeHtml(name)}</h4>
-                        <button class="btn-view" onclick="app.viewReferenceDocument('${key}')">View</button>
+                        <button class="btn-view" data-action="view-reference" data-doc-key="${key}">View</button>
                     </div>
                 `;
             });
             html += '</div>';
             
-            content.innerHTML = html;
+            // Use safeSetInnerHTML for user-controlled content
+            if (typeof window !== 'undefined' && window.safeSetInnerHTML) {
+                window.safeSetInnerHTML(content, html, { allowMarkdown: false });
+            } else {
+                content.innerHTML = html;
+            }
         } catch (error) {
             console.error('Failed to render reference documents:', error);
-            content.innerHTML = '<p>Failed to load reference documents</p>';
+            if (typeof window !== 'undefined' && window.safeSetInnerHTML) {
+                window.safeSetInnerHTML(content, '<p>Failed to load reference documents</p>', { trusted: false });
+            } else {
+                content.innerHTML = '<p>Failed to load reference documents</p>';
+            }
         }
     }
     
@@ -1359,9 +1658,22 @@ class PromptSpecApp {
         
         if (modal && modalHeader && modalBody) {
             const name = window.ReferenceDocuments?.getDocumentName(docKey) || docKey;
-            modalHeader.innerHTML = `<h2>${this.escapeHtml(name)}</h2><button class="close-btn" onclick="window.app.closeModal()">×</button>`;
+            // Use safeSetInnerHTML for user-controlled content (document name and content)
+            const headerHtml = `<h2>${this.escapeHtml(name)}</h2><button class="close-btn" data-action="close-modal">×</button>`;
+            const bodyHtml = `<pre class="reference-content">${this.escapeHtml(content)}</pre>`;
+            if (typeof window !== 'undefined' && window.safeSetInnerHTML) {
+                window.safeSetInnerHTML(modalHeader, headerHtml, { trusted: false });
+                window.safeSetInnerHTML(modalBody, bodyHtml, { trusted: false });
+            } else {
+                modalHeader.innerHTML = headerHtml;
+                modalBody.innerHTML = bodyHtml;
+            }
+            // Attach event listener
+            const closeBtn = modalHeader.querySelector('[data-action="close-modal"]');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', () => this.closeModal());
+            }
             modalHeader.className = 'modal-header';
-            modalBody.innerHTML = `<pre class="reference-content">${this.escapeHtml(content)}</pre>`;
             modal.classList.add('active');
         }
     }
@@ -1388,7 +1700,7 @@ class PromptSpecApp {
                             // Defer render to avoid blocking
                             setTimeout(() => {
                                 this.renderingEngine.renderAll();
-                            }, 0);
+                            }, AppConstants.TIMEOUTS.RENDER_DELAY);
                         }
                     }
                 }
@@ -1537,7 +1849,18 @@ class PromptSpecApp {
                     if (!projectGroupName || !projectGroupName.trim()) {
                         const name = prompt('Enter a project group name to save:');
                         if (!name || !name.trim()) {
-                            alert('Project group name is required to save.');
+                            const error = 'Project group name is required to save.';
+                            if (this.errorHandler) {
+                                this.errorHandler.showUserNotification(error, {
+                                    source: 'PromptSpecApp',
+                                    operation: 'saveProjectGroup'
+                                }, {
+                                    severity: ErrorHandler.Severity.WARNING,
+                                    title: 'Project Group Name Required'
+                                });
+                            } else {
+                                alert(error);
+                            }
                             return;
                         }
                         // Save the name to state
@@ -1612,7 +1935,18 @@ class PromptSpecApp {
                     if (section && section.output) {
                         navigator.clipboard.writeText(section.output).catch(err => {
                             console.error('Failed to copy:', err);
-                            alert('Failed to copy to clipboard');
+                            const error = 'Failed to copy to clipboard';
+                            if (this.errorHandler) {
+                                this.errorHandler.showUserNotification(error, {
+                                    source: 'PromptSpecApp',
+                                    operation: 'copyPromptWithInput'
+                                }, {
+                                    severity: ErrorHandler.Severity.WARNING,
+                                    title: 'Copy Failed'
+                                });
+                            } else {
+                                alert(error);
+                            }
                         });
                     }
                 }
@@ -1706,7 +2040,19 @@ class PromptSpecApp {
                     const state = this.stateManager.getState();
                     const otherProjects = state.projects.filter(p => p.id !== context.projectId);
                     if (otherProjects.length === 0) {
-                        alert('No other projects available to enhance from.');
+                        const error = 'No other projects available to enhance from.';
+                        if (this.errorHandler) {
+                            this.errorHandler.showUserNotification(error, {
+                                source: 'PromptSpecApp',
+                                operation: 'enhanceFromOtherProject',
+                                projectId: project.id
+                            }, {
+                                severity: ErrorHandler.Severity.INFO,
+                                title: 'No Projects Available'
+                            });
+                        } else {
+                            alert(error);
+                        }
                         return;
                     }
                     const projectNames = otherProjects.map(p => `${p.id}: ${p.name}`).join('\n');
@@ -1721,12 +2067,48 @@ class PromptSpecApp {
                 if (context.type === 'project' && context.projectId) {
                     const project = this.stateManager.getProject(context.projectId);
                     if (project && project.caseChain) {
-                        alert(`This project is enhanced from Case ${project.caseChain.previousCase}.\n\nPrevious output:\n${project.caseChain.previousOutput.substring(0, 200)}...`);
+                        const message = `This project is enhanced from Case ${project.caseChain.previousCase}.\n\nPrevious output:\n${project.caseChain.previousOutput.substring(0, 200)}...`;
+                        if (this.errorHandler) {
+                            this.errorHandler.showUserNotification(message, {
+                                source: 'PromptSpecApp',
+                                operation: 'showProjectInfo',
+                                projectId: project.id
+                            }, {
+                                severity: ErrorHandler.Severity.INFO,
+                                title: 'Project Enhancement Info'
+                            });
+                        } else {
+                            alert(message);
+                        }
                     } else if (project && project.linkedFromCase4) {
                         const sourceProject = this.stateManager.getProject(project.linkedFromCase4);
-                        alert(`This project is linked to Case 4 project: ${sourceProject?.name || project.linkedFromCase4}\n\nStructured inputs have been automatically injected into the appropriate sections.`);
+                        const message = `This project is linked to Case 4 project: ${sourceProject?.name || project.linkedFromCase4}\n\nStructured inputs have been automatically injected into the appropriate sections.`;
+                        if (this.errorHandler) {
+                            this.errorHandler.showUserNotification(message, {
+                                source: 'PromptSpecApp',
+                                operation: 'showProjectInfo',
+                                projectId: project.id
+                            }, {
+                                severity: ErrorHandler.Severity.INFO,
+                                title: 'Project Link Info'
+                            });
+                        } else {
+                            alert(message);
+                        }
                     } else {
-                        alert('This project is not part of a case chain.');
+                        const message = 'This project is not part of a case chain.';
+                        if (this.errorHandler) {
+                            this.errorHandler.showUserNotification(message, {
+                                source: 'PromptSpecApp',
+                                operation: 'showProjectInfo',
+                                projectId: project.id
+                            }, {
+                                severity: ErrorHandler.Severity.INFO,
+                                title: 'Project Info'
+                            });
+                        } else {
+                            alert(message);
+                        }
                     }
                 }
                 break;
@@ -1862,7 +2244,15 @@ class PromptSpecApp {
     }
     
     // Handle keyboard shortcuts
+    // Handle keyboard shortcut - delegates to UIManager
     handleKeyboardShortcut(data) {
+        if (this.uiManager) {
+            return this.uiManager.handleKeyboardShortcut(data);
+        }
+    }
+    
+    // Legacy handleKeyboardShortcut implementation (if needed for fallback)
+    _handleKeyboardShortcut(data) {
         if (data.action === 'add-element') {
             const element = this.createDefaultElement(data.elementType);
             this.stateManager.addElement(data.pageId, element);
@@ -1896,30 +2286,39 @@ class PromptSpecApp {
     }
     
     // Show edit modal
+    // Show edit modal - delegates to UIManager
     showEditModal(pageId, elementIndex) {
+        if (this.uiManager) {
+            return this.uiManager.showEditModal(pageId, elementIndex);
+        }
+    }
+    
+    // Legacy showEditModal implementation (if needed for fallback)
+    _showEditModal(pageId, elementIndex) {
         this.renderEditModal(pageId, elementIndex);
     }
     
     // Show add element modal
+    // Show add element modal - delegates to UIManager
     showAddElementModal(pageId) {
+        if (this.uiManager) {
+            return this.uiManager.showAddElementModal(pageId);
+        }
+    }
+    
+    // Legacy showAddElementModal implementation (if needed for fallback)
+    _showAddElementModal(pageId) {
         this.renderAddElementModal(pageId);
     }
     
     // Render add element modal
-    renderAddElementModal(pageId, elementIndex = null) {
-        const modal = document.getElementById('modal');
-        const modalBody = document.getElementById('modal-body');
-        if (!modal || !modalBody) return;
-        
-        const types = {
-            '1': 'task',
-            '2': 'header',
-            '3': 'header-checkbox',
-            '4': 'multi-checkbox',
-            '5': 'one-time'
-        };
-        
-        modalBody.innerHTML = `
+    /**
+     * Render HTML for add element modal
+     * @private
+     * @returns {string} HTML string for modal body
+     */
+    _renderAddElementModalHTML() {
+        return `
             <h3>Add Element</h3>
             <p style="margin-bottom: 15px;">Press a number key, click, or drag to set count:</p>
             <div style="margin: 10px 0;">
@@ -1930,80 +2329,64 @@ class PromptSpecApp {
                 <div class="element-type-option" data-type="one-time" style="padding: 5px; cursor: pointer; user-select: none;"><strong>5</strong> - One-time Task</div>
             </div>
             <div style="margin-top: 20px;">
-                <button class="cancel" onclick="window.app.closeModal()">Cancel</button>
+                <button class="cancel" data-action="close-modal">Cancel</button>
             </div>
         `;
+    }
+    
+    /**
+     * Create elements from modal selection
+     * @private
+     * @returns {Object} Object with firstElementIndex and firstElement, or null if failed
+     */
+    _createElementsFromModal(pageId, elementIndex, type, count) {
+        const state = this.stateManager.getState();
+        const page = state.pages.find(p => p.id === pageId);
+        if (!page) return null;
         
-        modal.classList.add('active');
+        let firstElementIndex = null;
+        let firstElement = null;
+        let currentInsertIndex = elementIndex;
         
-        // Track element count for drag functionality
-        let elementCount = 1;
-        const countDisplay = document.createElement('div');
-        countDisplay.id = 'element-count-display';
-        countDisplay.style.cssText = 'position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 36px; font-weight: bold; color: #4a9eff; pointer-events: none; user-select: none; display: none; z-index: 2001; text-shadow: 0 2px 8px rgba(0,0,0,0.8); background: rgba(45, 45, 45, 0.95); padding: 8px 16px; border-radius: 8px; border: 2px solid #4a9eff; min-width: 60px; text-align: center;';
-        countDisplay.textContent = '1';
-        const modalContent = modal.querySelector('.modal-content');
-        if (modalContent) {
-            modalContent.insertBefore(countDisplay, modalContent.firstChild);
+        // Add multiple elements
+        if (elementIndex !== null && elementIndex >= 0) {
+            // Add after the specified element
+            for (let i = 0; i < count; i++) {
+                const newElement = this.createDefaultElement(type);
+                const insertIndex = currentInsertIndex + 1;
+                const updatedElements = [...page.elements];
+                updatedElements.splice(insertIndex, 0, newElement);
+                this.stateManager.updatePage(pageId, { elements: updatedElements });
+                if (i === 0) {
+                    firstElementIndex = insertIndex;
+                    firstElement = newElement;
+                }
+                currentInsertIndex++;
+            }
+        } else {
+            // Add at the end
+            const startIndex = page.elements.length;
+            for (let i = 0; i < count; i++) {
+                const newElement = this.createDefaultElement(type);
+                this.stateManager.addElement(pageId, newElement);
+                if (i === 0) {
+                    firstElementIndex = startIndex + i;
+                    firstElement = newElement;
+                }
+            }
         }
         
-        // Click handler for numbered options
-        const handleOptionClick = (type, count = 1) => {
-            this.closeModal();
-            
-            const state = this.stateManager.getState();
-            const page = state.pages.find(p => p.id === pageId);
-            if (!page) return;
-            
-            let firstElementIndex = null;
-            let firstElement = null;
-            let currentInsertIndex = elementIndex;
-            
-            // Add multiple elements
-            if (elementIndex !== null && elementIndex >= 0) {
-                // Add after the specified element
-                for (let i = 0; i < count; i++) {
-                    const newElement = this.createDefaultElement(type);
-                    const insertIndex = currentInsertIndex + 1;
-                    const updatedElements = [...page.elements];
-                    updatedElements.splice(insertIndex, 0, newElement);
-                    this.stateManager.updatePage(pageId, { elements: updatedElements });
-                    if (i === 0) {
-                        firstElementIndex = insertIndex;
-                        firstElement = newElement;
-                    }
-                    currentInsertIndex++;
-                }
-            } else {
-                // Add at the end
-                const startIndex = page.elements.length;
-                for (let i = 0; i < count; i++) {
-                    const newElement = this.createDefaultElement(type);
-                    this.stateManager.addElement(pageId, newElement);
-                    if (i === 0) {
-                        firstElementIndex = startIndex + i;
-                        firstElement = newElement;
-                    }
-                }
-            }
-            
-            // Open edit modal for the first element
-            if (firstElementIndex !== null && firstElement) {
-                setTimeout(() => {
-                    this.renderEditModal(pageId, firstElementIndex);
-                    setTimeout(() => {
-                        const textInput = document.getElementById('edit-text');
-                        if (textInput) {
-                            textInput.focus();
-                            textInput.select();
-                        }
-                    }, 50);
-                }, 50);
-            }
-        };
-        
-        // Drag state tracking
-        let dragState = {
+        return { firstElementIndex, firstElement };
+    }
+    
+    /**
+     * Setup drag handling for add element modal
+     * @private
+     * @returns {Object} Object with dragState, globalMouseMove, globalMouseUp, and cleanup function
+     */
+    _setupAddElementDragHandling(countDisplay, types, handleOptionClick) {
+        let elementCount = 1;
+        const dragState = {
             active: false,
             startX: 0,
             startCount: 1,
@@ -2039,7 +2422,14 @@ class PromptSpecApp {
             }
         };
         
-        // Add click and drag listeners to numbered options
+        return { dragState, globalMouseMove, globalMouseUp, elementCount: () => elementCount };
+    }
+    
+    /**
+     * Setup click handling for add element modal
+     * @private
+     */
+    _setupAddElementClickHandling(modalBody, dragState, globalMouseMove, globalMouseUp, countDisplay, handleOptionClick) {
         modalBody.querySelectorAll('.element-type-option').forEach(option => {
             option.addEventListener('mousedown', (e) => {
                 const type = option.dataset.type;
@@ -2048,7 +2438,7 @@ class PromptSpecApp {
                 dragState.startX = e.clientX;
                 dragState.startCount = 1;
                 dragState.currentType = type;
-                elementCount = 1;
+                countDisplay.textContent = '1';
                 countDisplay.style.display = 'block';
                 document.addEventListener('mousemove', globalMouseMove);
                 document.addEventListener('mouseup', globalMouseUp);
@@ -2065,6 +2455,68 @@ class PromptSpecApp {
                 }
             });
         });
+    }
+    
+    renderAddElementModal(pageId, elementIndex = null) {
+        const modal = document.getElementById('modal');
+        const modalBody = document.getElementById('modal-body');
+        if (!modal || !modalBody) return;
+        
+        const types = {
+            '1': 'task',
+            '2': 'header',
+            '3': 'header-checkbox',
+            '4': 'multi-checkbox',
+            '5': 'one-time'
+        };
+        
+        // _renderAddElementModalHTML returns trusted HTML template, but use safeSetInnerHTML for consistency
+        if (window.safeSetInnerHTML) {
+            window.safeSetInnerHTML(modalBody, this._renderAddElementModalHTML(), { trusted: true });
+        } else {
+            modalBody.innerHTML = this._renderAddElementModalHTML();
+        }
+        modal.classList.add('active');
+        
+        // Create count display for drag functionality
+        const countDisplay = document.createElement('div');
+        countDisplay.id = 'element-count-display';
+        countDisplay.style.cssText = `position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 36px; font-weight: bold; color: #4a9eff; pointer-events: none; user-select: none; display: none; z-index: ${AppConstants.UI.Z_INDEX.DROPDOWN_COUNT}; text-shadow: 0 2px 8px rgba(0,0,0,0.8); background: rgba(45, 45, 45, 0.95); padding: 8px 16px; border-radius: 8px; border: 2px solid #4a9eff; min-width: 60px; text-align: center;`;
+        countDisplay.textContent = '1';
+        const modalContent = modal.querySelector('.modal-content');
+        if (modalContent) {
+            modalContent.insertBefore(countDisplay, modalContent.firstChild);
+        }
+        
+        // Click handler for numbered options
+        const handleOptionClick = (type, count = 1) => {
+            this.closeModal();
+            
+            const result = this._createElementsFromModal(pageId, elementIndex, type, count);
+            if (!result) return;
+            
+            const { firstElementIndex, firstElement } = result;
+            
+            // Open edit modal for the first element
+            if (firstElementIndex !== null && firstElement) {
+                setTimeout(() => {
+                    this.renderEditModal(pageId, firstElementIndex);
+                    setTimeout(() => {
+                        const textInput = document.getElementById('edit-text');
+                        if (textInput) {
+                            textInput.focus();
+                            textInput.select();
+                        }
+                    }, 50);
+                }, 50);
+            }
+        };
+        
+        // Setup drag handling
+        const { dragState, globalMouseMove, globalMouseUp } = this._setupAddElementDragHandling(countDisplay, types, handleOptionClick);
+        
+        // Setup click handling
+        this._setupAddElementClickHandling(modalBody, dragState, globalMouseMove, globalMouseUp, countDisplay, handleOptionClick);
         
         // Keyboard handler for number keys
         const keyHandler = (e) => {
@@ -2088,16 +2540,13 @@ class PromptSpecApp {
         };
     }
     
-    // Render edit modal
-    renderEditModal(pageId, elementIndex) {
-        const element = this.stateManager.getElement(pageId, elementIndex);
-        if (!element) return;
-        
-        const modal = document.getElementById('modal');
-        const modalBody = document.getElementById('modal-body');
-        if (!modal || !modalBody) return;
-        
-        let html = ``;
+    /**
+     * Render base HTML for edit modal (common fields)
+     * @private
+     * @returns {string} HTML string for base fields
+     */
+    _renderEditModalBaseHTML(element) {
+        let html = '';
         
         // Text field (only for elements that have text)
         if (element.type === 'task' || element.type === 'header' || element.type === 'header-checkbox') {
@@ -2132,68 +2581,154 @@ class PromptSpecApp {
             `;
         }
         
-        // For tasks, show subtask editor
-        if (element.type === 'task' || element.type === 'header-checkbox') {
-            if (!element.subtasks) {
-                element.subtasks = [];
-            }
-            html += `<label style="margin-top: 15px;">Subtasks:</label>`;
-            html += `<div id="edit-subtasks-in-modal" class="edit-subtasks-container">`;
-            if (element.subtasks.length > 0) {
-                element.subtasks.forEach((subtask, idx) => {
-                    html += `
-                        <div class="subtask-item">
-                            <input type="text" class="edit-subtask-text-modal" data-index="${idx}" 
-                                   value="${this.escapeHtml(subtask.text)}" placeholder="Subtask text" />
-                            <input type="text" class="edit-subtask-time-modal" data-index="${idx}" 
-                                   value="${this.escapeHtml(subtask.timeAllocated || '')}" placeholder="Time" />
-                            <label class="edit-subtask-repeat-label">
-                                <input type="checkbox" class="edit-subtask-repeats-modal" data-index="${idx}" 
-                                       ${subtask.repeats !== false ? 'checked' : ''} />
-                                Repeats
-                            </label>
-                            <button onclick="window.app.removeEditSubtaskModal(${idx})" class="remove-subtask-btn">×</button>
-                        </div>
-                    `;
-                });
-            }
-            html += `</div>`;
-            html += `
-                <div class="subtask-modal-actions">
-                    <button onclick="window.app.addEditSubtaskModal()" class="add-subtask-btn">+ Add Subtask</button>
-                    ${element.subtasks.length > 0 ? `<button onclick="window.app.removeAllSubtasksModal()" class="remove-all-subtasks-btn">Remove All Subtasks</button>` : ''}
-                </div>
-            `;
+        return html;
+    }
+    
+    /**
+     * Render HTML for task element with subtasks
+     * @private
+     * @returns {string} HTML string for task-specific fields
+     */
+    _renderEditModalHTMLForTask(element) {
+        if (element.type !== 'task' && element.type !== 'header-checkbox') {
+            return '';
         }
         
-        // For multi-checkbox, show items editor
-        if (element.type === 'multi-checkbox' && element.items) {
-            html += `<label style="margin-top: 15px;">Items:</label>`;
-            html += `<div id="edit-items">`;
-            element.items.forEach((item, idx) => {
+        if (!element.subtasks) {
+            element.subtasks = [];
+        }
+        
+        let html = `<label style="margin-top: 15px;">Subtasks:</label>`;
+        html += `<div id="edit-subtasks-in-modal" class="edit-subtasks-container">`;
+        if (element.subtasks.length > 0) {
+            element.subtasks.forEach((subtask, idx) => {
                 html += `
                     <div class="subtask-item">
-                        <input type="text" class="edit-item-text" data-index="${idx}" 
-                               value="${this.escapeHtml(item.text)}" />
-                        <input type="text" class="edit-item-fun" data-index="${idx}" 
-                               value="${this.escapeHtml(item.funModifier || '')}" placeholder="Fun modifier" />
-                        <button onclick="window.app.removeEditItem(${idx})">×</button>
+                        <input type="text" class="edit-subtask-text-modal" data-index="${idx}" 
+                               value="${this.escapeHtml(subtask.text)}" placeholder="Subtask text" />
+                        <input type="text" class="edit-subtask-time-modal" data-index="${idx}" 
+                               value="${this.escapeHtml(subtask.timeAllocated || '')}" placeholder="Time" />
+                        <label class="edit-subtask-repeat-label">
+                            <input type="checkbox" class="edit-subtask-repeats-modal" data-index="${idx}" 
+                                   ${subtask.repeats !== false ? 'checked' : ''} />
+                            Repeats
+                        </label>
+                        <button data-action="remove-subtask" data-index="${idx}" class="remove-subtask-btn">×</button>
                     </div>
                 `;
             });
-            html += `</div>`;
-            html += `<button onclick="window.app.addEditItem()" style="margin-top: 10px;">+ Add Item</button>`;
         }
-        
+        html += `</div>`;
         html += `
-            <div style="margin-top: 20px;">
-                <button onclick="window.app.saveEdit('${pageId}', ${elementIndex})">Save</button>
-                <button class="cancel" onclick="window.app.closeModal()">Cancel</button>
+            <div class="subtask-modal-actions">
+                <button data-action="add-subtask" class="add-subtask-btn">+ Add Subtask</button>
+                ${element.subtasks.length > 0 ? `<button data-action="remove-all-subtasks" class="remove-all-subtasks-btn">Remove All Subtasks</button>` : ''}
             </div>
         `;
         
-        modalBody.innerHTML = html;
+        return html;
+    }
+    
+    /**
+     * Render HTML for multi-checkbox element with items
+     * @private
+     * @returns {string} HTML string for multi-checkbox-specific fields
+     */
+    _renderEditModalHTMLForMultiCheckbox(element) {
+        if (element.type !== 'multi-checkbox' || !element.items) {
+            return '';
+        }
+        
+        let html = `<label style="margin-top: 15px;">Items:</label>`;
+        html += `<div id="edit-items">`;
+        element.items.forEach((item, idx) => {
+            html += `
+                <div class="subtask-item">
+                    <input type="text" class="edit-item-text" data-index="${idx}" 
+                           value="${this.escapeHtml(item.text)}" />
+                    <input type="text" class="edit-item-fun" data-index="${idx}" 
+                           value="${this.escapeHtml(item.funModifier || '')}" placeholder="Fun modifier" />
+                    <button data-action="remove-item" data-index="${idx}">×</button>
+                </div>
+            `;
+        });
+        html += `</div>`;
+        html += `<button data-action="add-item" style="margin-top: 10px;">+ Add Item</button>`;
+        
+        return html;
+    }
+    
+    /**
+     * Setup event handlers for edit modal
+     * @private
+     */
+    _setupEditModalEventHandlers(modalBody, pageId, elementIndex) {
+        const handler = this.uiManager || this;
+        const self = this;
+        
+        modalBody.querySelectorAll('[data-action="close-modal"]').forEach(btn => {
+            btn.addEventListener('click', () => handler.closeModal());
+        });
+        modalBody.querySelectorAll('[data-action="save-edit"]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const pageId = btn.dataset.pageId;
+                const elementIndex = parseInt(btn.dataset.elementIndex);
+                handler.saveEdit(pageId, elementIndex);
+            });
+        });
+        modalBody.querySelectorAll('[data-action="remove-subtask"]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const index = parseInt(btn.dataset.index);
+                self.removeEditSubtaskModal(index);
+            });
+        });
+        modalBody.querySelectorAll('[data-action="add-subtask"]').forEach(btn => {
+            btn.addEventListener('click', () => self.addEditSubtaskModal());
+        });
+        modalBody.querySelectorAll('[data-action="remove-all-subtasks"]').forEach(btn => {
+            btn.addEventListener('click', () => self.removeAllSubtasksModal());
+        });
+        modalBody.querySelectorAll('[data-action="remove-item"]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const index = parseInt(btn.dataset.index);
+                self.removeEditItem(index);
+            });
+        });
+        modalBody.querySelectorAll('[data-action="add-item"]').forEach(btn => {
+            btn.addEventListener('click', () => self.addEditItem());
+        });
+    }
+    
+    // Render edit modal
+    renderEditModal(pageId, elementIndex) {
+        const element = this.stateManager.getElement(pageId, elementIndex);
+        if (!element) return;
+        
+        const modal = document.getElementById('modal');
+        const modalBody = document.getElementById('modal-body');
+        if (!modal || !modalBody) return;
+        
+        let html = this._renderEditModalBaseHTML(element);
+        html += this._renderEditModalHTMLForTask(element);
+        html += this._renderEditModalHTMLForMultiCheckbox(element);
+        
+        html += `
+            <div style="margin-top: 20px;">
+                <button data-action="save-edit" data-page-id="${pageId}" data-element-index="${elementIndex}">Save</button>
+                <button class="cancel" data-action="close-modal">Cancel</button>
+            </div>
+        `;
+        
+        // html contains user data (element.text, element.timeAllocated, etc.) - sanitize
+        if (window.safeSetInnerHTML) {
+            window.safeSetInnerHTML(modalBody, html, { trusted: false });
+        } else {
+            modalBody.innerHTML = html;
+        }
         modal.classList.add('active');
+        
+        // Setup event handlers
+        this._setupEditModalEventHandlers(modalBody, pageId, elementIndex);
         
         // Store current editing state
         this.currentEdit = {
@@ -2212,7 +2747,15 @@ class PromptSpecApp {
     }
     
     // Close modal
+    // Close modal - delegates to UIManager
     closeModal() {
+        if (this.uiManager) {
+            return this.uiManager.closeModal();
+        }
+    }
+    
+    // Legacy closeModal implementation (if needed for fallback)
+    _closeModal() {
         if (this._addElementModalCleanup) {
             this._addElementModalCleanup();
             this._addElementModalCleanup = null;
@@ -2349,7 +2892,15 @@ class PromptSpecApp {
     }
     
     // Show settings modal with content
+    // Show settings modal - delegates to UIManager
     showSettingsModal() {
+        if (this.uiManager) {
+            return this.uiManager.showSettingsModal();
+        }
+    }
+    
+    // Legacy showSettingsModal implementation (if needed for fallback)
+    _showSettingsModal() {
         const modal = document.getElementById('settings-modal');
         const settingsBody = document.getElementById('settings-body');
         if (!modal || !settingsBody) return;
@@ -2454,7 +3005,12 @@ class PromptSpecApp {
         
         html += '<button class="settings-reset-btn" id="settings-reset">Reset to Defaults</button>';
         
-        settingsBody.innerHTML = html;
+        // html contains settings data - mostly trusted but sanitize for safety
+        if (window.safeSetInnerHTML) {
+            window.safeSetInnerHTML(settingsBody, html, { trusted: true });
+        } else {
+            settingsBody.innerHTML = html;
+        }
         
         // Add event listeners to all controls
         settingsBody.querySelectorAll('input, select').forEach(input => {
@@ -2579,83 +3135,14 @@ class PromptSpecApp {
         `;
     }
     
-    // Update setting
+    // Update setting (delegates to StateUpdateHelper)
     updateSetting(path, value) {
-        const state = this.stateManager.getState();
-        const settings = { ...state.settings };
-        const keys = path.split('.');
-        let obj = settings;
-        for (let i = 0; i < keys.length - 1; i++) {
-            if (!obj[keys[i]]) {
-                obj[keys[i]] = {};
-            }
-            obj = obj[keys[i]];
-        }
-        obj[keys[keys.length - 1]] = value;
-        
-        // Sync color inputs
-        if (path.includes('color') || path.includes('background') || path.includes('bg')) {
-            const allInputs = document.querySelectorAll(`[data-setting-path="${path}"]`);
-            allInputs.forEach(input => {
-                if (input.type === 'color' || input.type === 'text') {
-                    input.value = value;
-                }
-            });
-        }
-        
-        // Sync opacity inputs
-        if (path.includes('opacity')) {
-            const numValue = parseFloat(value) * 100;
-            const allInputs = document.querySelectorAll(`[data-setting-path="${path}"]`);
-            allInputs.forEach(input => {
-                if (input.type === 'range' || input.type === 'number') {
-                    input.value = numValue;
-                }
-            });
-        }
-        
-        // Sync slider inputs
-        if (path.includes('Size') || path.includes('margin') || path.includes('padding') || path.includes('borderRadius') || path.includes('size')) {
-            const numValue = parseFloat(value) || 0;
-            const allInputs = document.querySelectorAll(`[data-setting-path="${path}"]`);
-            allInputs.forEach(input => {
-                if (input.type === 'range' || input.type === 'number') {
-                    input.value = numValue;
-                }
-            });
-        }
-        
-        this.stateManager.updateSettings(settings);
-        this.applySettings(settings);
+        this.stateUpdateHelper.updateSetting(path, value);
     }
     
-    // Apply settings to CSS
+    // Apply settings to CSS (delegates to StateUpdateHelper)
     applySettings(settings) {
-        const root = document.documentElement;
-        root.style.setProperty('--bg-color', settings.background);
-        root.style.setProperty('--page-bg', (settings.page && settings.page.background) || '#2d2d2d');
-        root.style.setProperty('--page-margin', (settings.page && settings.page.margin) || '0px');
-        root.style.setProperty('--page-padding', (settings.page && settings.page.padding) || '20px');
-        root.style.setProperty('--page-border-radius', (settings.page && settings.page.borderRadius) || '8px');
-        root.style.setProperty('--page-font-family', (settings.page && settings.page.fontFamily) || '-apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif');
-        root.style.setProperty('--page-font-size', (settings.page && settings.page.fontSize) || '14px');
-        root.style.setProperty('--page-opacity', (settings.page && settings.page.opacity) || '1');
-        root.style.setProperty('--page-color', (settings.page && settings.page.color) || '#e0e0e0');
-        root.style.setProperty('--page-title-font-size', (settings.page && settings.page.titleFontSize) || '18px');
-        root.style.setProperty('--page-title-color', (settings.page && settings.page.titleColor) || '#ffffff');
-        root.style.setProperty('--page-title-margin-bottom', (settings.page && settings.page.titleMarginBottom) || '15px');
-        root.style.setProperty('--element-bg', (settings.element && settings.element.bg) || 'transparent');
-        root.style.setProperty('--element-margin', (settings.element && settings.element.margin) || '0px');
-        root.style.setProperty('--element-padding', (settings.element && settings.element.padding) || '10px');
-        root.style.setProperty('--element-font-family', (settings.element && settings.element.fontFamily) || '-apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif');
-        root.style.setProperty('--element-font-size', (settings.element && settings.element.fontSize) || '14px');
-        root.style.setProperty('--element-opacity', (settings.element && settings.element.opacity) || '1');
-        root.style.setProperty('--element-color', (settings.element && settings.element.color) || '#e0e0e0');
-        root.style.setProperty('--element-hover-bg', (settings.element && settings.element.hoverBg) || '#363636');
-        root.style.setProperty('--header-font-size', (settings.header && settings.header.fontSize) || '16px');
-        root.style.setProperty('--header-color', (settings.header && settings.header.color) || '#b8b8b8');
-        root.style.setProperty('--header-margin', (settings.header && settings.header.margin) || '10px 0');
-        root.style.setProperty('--checkbox-size', settings.checkboxSize || '18px');
+        this.stateUpdateHelper.applySettingsToDOM(settings);
     }
     
     // Show data view modal
@@ -2757,24 +3244,13 @@ class PromptSpecApp {
     // ============================================
     
     // Create a new project
+    // Create project - delegates to ProjectManager
     async createProject(name, description, caseNumber = 1, caseChain = null, customWorkflow = false, automationEngine = 'file-watching') {
-        // If workflowType is provided (legacy), convert to case number
-        if (typeof caseNumber === 'string' && (caseNumber === 'full' || caseNumber === 'ux-only')) {
-            // Legacy support: convert workflowType to case
-            caseNumber = caseNumber === 'ux-only' ? 2 : 1;
+        if (this.projectManager) {
+            return await this.projectManager.createProject(name, description, caseNumber, caseChain, customWorkflow, automationEngine);
         }
-        
-        const project = await this.stateManager.createProject(name, description, caseNumber, caseChain, customWorkflow, automationEngine);
-        
-        // Add inference steps for Case 2
-        if (caseNumber === 2) {
-            await this.addInferenceSteps(project.id);
-        }
-        
-        // Load prompts for all sections
-        await this.loadPromptsForProject(project.id);
-        
-        return project;
+        // Fallback if manager not available
+        return await this.stateManager.createProject(name, description, caseNumber, caseChain, customWorkflow, automationEngine);
     }
     
     // Remove Input Guidance section from prompt text
@@ -2859,8 +3335,12 @@ class PromptSpecApp {
         }
     }
     
-    // Check if section dependencies are met
+    // Check if section dependencies are met (delegates to SectionLogicService)
     checkDependencies(projectId, sectionId) {
+        if (this.sectionLogicService) {
+            return this.sectionLogicService.checkDependencies(projectId, sectionId);
+        }
+        // Fallback if service not available
         const project = this.stateManager.getProject(projectId);
         if (!project) return { met: false, missing: [] };
         
@@ -2871,7 +3351,15 @@ class PromptSpecApp {
     }
     
     // Open modal to select previous section output
-    pasteFromPreviousSection(projectId, sectionId) {
+    // Paste from previous section - delegates to SectionManager
+    async pasteFromPreviousSection(projectId, sectionId) {
+        if (this.sectionManager) {
+            return await this.sectionManager.pasteFromPreviousSection(projectId, sectionId);
+        }
+    }
+    
+    // Legacy pasteFromPreviousSection implementation (if needed for fallback)
+    async _pasteFromPreviousSection(projectId, sectionId) {
         const project = this.stateManager.getProject(projectId);
         if (!project) return;
         
@@ -2925,11 +3413,17 @@ class PromptSpecApp {
             item.style.cssText = 'padding: 12px; margin-bottom: 8px; border: 2px solid #404040; border-radius: 4px; cursor: pointer; background: #252525; transition: all 0.2s;';
             item.dataset.sectionId = section.sectionId;
             
-            item.innerHTML = `
+            // section.sectionName and outputPreview are user data - escape and use safeSetInnerHTML
+            const itemHtml = `
                 <div style="font-weight: 600; color: #e0e0e0; margin-bottom: 4px;">${this.escapeHtml(section.sectionName)}</div>
                 <div style="font-size: 0.85em; color: #888; margin-bottom: 6px;">Status: ${section.status || 'unknown'}</div>
                 <div style="font-size: 0.9em; color: #aaa; line-height: 1.4; max-height: 60px; overflow: hidden;">${this.escapeHtml(outputPreview)}</div>
             `;
+            if (window.safeSetInnerHTML) {
+                window.safeSetInnerHTML(item, itemHtml, { trusted: false });
+            } else {
+                item.innerHTML = itemHtml;
+            }
             
             // Add click handler - highlight on click
             item.addEventListener('click', () => {
@@ -3111,7 +3605,15 @@ class PromptSpecApp {
     }
     
     // Mark section as complete
+    // Mark section complete - delegates to SectionManager
     markSectionComplete(projectId, sectionId) {
+        if (this.sectionManager) {
+            return this.sectionManager.markSectionComplete(projectId, sectionId);
+        }
+    }
+    
+    // Legacy markSectionComplete implementation (if needed for fallback)
+    _markSectionComplete(projectId, sectionId) {
         const project = this.stateManager.getProject(projectId);
         if (!project) return;
         
@@ -3138,7 +3640,15 @@ class PromptSpecApp {
     }
     
     // Mark section as needing revision
+    // Mark section needs revision - delegates to SectionManager
     markSectionNeedsRevision(projectId, sectionId) {
+        if (this.sectionManager) {
+            return this.sectionManager.markSectionNeedsRevision(projectId, sectionId);
+        }
+    }
+    
+    // Legacy markSectionNeedsRevision implementation (if needed for fallback)
+    _markSectionNeedsRevision(projectId, sectionId) {
         this.stateManager.updateSection(projectId, sectionId, {
             status: "needs_revision"
         });
@@ -3167,7 +3677,15 @@ class PromptSpecApp {
     }
     
     // Update pane visibility based on state
+    // Update pane visibility - delegates to InitializationManager
     updatePaneVisibility(paneName, isExpanded) {
+        if (this.initializationManager) {
+            return this.initializationManager.updatePaneVisibility(paneName, isExpanded);
+        }
+    }
+    
+    // Legacy updatePaneVisibility implementation (if needed for fallback)
+    _updatePaneVisibility(paneName, isExpanded) {
         let paneElement = null;
         let toggleBtn = null;
         let collapsedToggleBtn = null;
@@ -3230,7 +3748,15 @@ class PromptSpecApp {
     }
     
     // Restore pane states on initialization
+    // Restore pane states - delegates to InitializationManager
     restorePaneStates() {
+        if (this.initializationManager) {
+            return this.initializationManager.restorePaneStates();
+        }
+    }
+    
+    // Legacy restorePaneStates implementation (if needed for fallback)
+    _restorePaneStates() {
         const paneStates = this.stateManager.getState().paneStates || {};
         Object.keys(paneStates).forEach(paneName => {
             const isExpanded = this.stateManager.getPaneState(paneName);
@@ -3244,7 +3770,19 @@ class PromptSpecApp {
         
         const outputMappingSection = project.sections.find(s => s.sectionId === 'output-mapping');
         if (!outputMappingSection || !outputMappingSection.output) {
-            alert('Please complete the Output Mapping step first to generate structured outputs.');
+            const error = 'Please complete the Output Mapping step first to generate structured outputs.';
+            if (this.errorHandler) {
+                this.errorHandler.showUserNotification(error, {
+                    source: 'PromptSpecApp',
+                    operation: 'exportStructuredOutputs',
+                    projectId: activeProject.id
+                }, {
+                    severity: ErrorHandler.Severity.WARNING,
+                    title: 'Step Required'
+                });
+            } else {
+                alert(error);
+            }
             return;
         }
         
@@ -3254,7 +3792,19 @@ class PromptSpecApp {
         // Extract structured outputs from input-structuring step
         const structuringSection = project.sections.find(s => s.sectionId === 'input-structuring');
         if (!structuringSection || !structuringSection.output) {
-            alert('Please complete the Input Structuring step first.');
+            const error = 'Please complete the Input Structuring step first.';
+            if (this.errorHandler) {
+                this.errorHandler.showUserNotification(error, {
+                    source: 'PromptSpecApp',
+                    operation: 'exportStructuredOutputs',
+                    projectId: activeProject.id
+                }, {
+                    severity: ErrorHandler.Severity.WARNING,
+                    title: 'Step Required'
+                });
+            } else {
+                alert(error);
+            }
             return;
         }
         
@@ -3296,7 +3846,19 @@ class PromptSpecApp {
     }
     
     // Parse structured outputs from input-structuring step output
+    // Parse structured outputs - delegates to ProjectManager or FileOperations
     parseStructuredOutputs(outputText) {
+        if (this.projectManager) {
+            return this.projectManager.parseStructuredOutputs(outputText);
+        }
+        if (this.fileOperations) {
+            return this.fileOperations.parseStructuredOutputs(outputText);
+        }
+        return {};
+    }
+    
+    // Legacy parseStructuredOutputs implementation (if needed for fallback)
+    _parseStructuredOutputs(outputText) {
         const outputs = {};
         
         // Look for JSON code blocks with step names - multiple patterns
@@ -3366,7 +3928,18 @@ class PromptSpecApp {
         // Check if Case 4 is complete
         const outputMappingSection = case4Project.sections.find(s => s.sectionId === 'output-mapping');
         if (!outputMappingSection || outputMappingSection.status !== 'complete') {
-            alert('Please complete the Output Mapping step in the Case 4 project before linking.');
+            const error = 'Please complete the Output Mapping step in the Case 4 project before linking.';
+            if (this.errorHandler) {
+                this.errorHandler.showUserNotification(error, {
+                    source: 'PromptSpecApp',
+                    operation: 'linkFromCase4'
+                }, {
+                    severity: ErrorHandler.Severity.WARNING,
+                    title: 'Step Required'
+                });
+            } else {
+                alert(error);
+            }
             return;
         }
         
@@ -3406,7 +3979,15 @@ class PromptSpecApp {
     }
     
     // Link from Case 4 (called from target project)
+    // Link from Case 4 - delegates to ProjectManager
     async linkFromCase4(targetProjectId) {
+        if (this.projectManager) {
+            return await this.projectManager.linkFromCase4(targetProjectId);
+        }
+    }
+    
+    // Legacy linkFromCase4 implementation (if needed for fallback)
+    async _linkFromCase4(targetProjectId) {
         const targetProject = this.stateManager.getProject(targetProjectId);
         if (!targetProject || (targetProject.case !== 1 && targetProject.case !== 2 && targetProject.case !== 3)) {
             alert('This action is only available for Case 1, 2, or 3 projects.');
@@ -3444,8 +4025,15 @@ class PromptSpecApp {
         await this.injectCase4Inputs(case4Project, targetProject);
     }
     
-    // Inject Case 4 structured inputs into target project
+    // Inject Case 4 inputs - delegates to ProjectManager
     async injectCase4Inputs(case4Project, targetProject) {
+        if (this.projectManager) {
+            return await this.projectManager.injectCase4Inputs(case4Project, targetProject);
+        }
+    }
+    
+    // Legacy injectCase4Inputs implementation (if needed for fallback)
+    async _injectCase4Inputs(case4Project, targetProject) {
         // Get structured outputs from Case 4
         const structuringSection = case4Project.sections.find(s => s.sectionId === 'input-structuring');
         if (!structuringSection || !structuringSection.output) {
@@ -3540,8 +4128,12 @@ class PromptSpecApp {
         alert(`Successfully linked Case 4 project "${case4Project.name}" to "${targetProject.name}".\n\nInjected ${injectedCount} structured input(s) into the appropriate sections.`);
     }
     
-    // Get first incomplete section
+    // Get first incomplete section (delegates to NavigationService)
     getFirstIncompleteSection(projectId) {
+        if (this.navigationService) {
+            return this.navigationService.getFirstIncompleteSection(projectId);
+        }
+        // Fallback if service not available
         try {
             const project = this.stateManager.getProject(projectId);
             if (!project) return null;
@@ -3571,7 +4163,15 @@ class PromptSpecApp {
     }
     
     // Navigate to a specific section
+    // Navigate to section - delegates to SectionManager
     navigateToSection(projectId, sectionId) {
+        if (this.sectionManager) {
+            return this.sectionManager.navigateToSection(projectId, sectionId);
+        }
+    }
+    
+    // Legacy navigateToSection implementation (if needed for fallback)
+    _navigateToSection(projectId, sectionId) {
         if (!projectId || !sectionId) return;
         
         this.stateManager.setActiveProject(projectId);
@@ -3592,29 +4192,46 @@ class PromptSpecApp {
     }
     
     // Handle section input change
+    // Handle section input change - delegates to SectionManager
     handleSectionInputChange(projectId, sectionId, value) {
+        if (this.sectionManager) {
+            return this.sectionManager.updateSectionInput(projectId, sectionId, value);
+        }
+        // Fallback
         this.stateManager.updateSection(projectId, sectionId, {
             input: value,
             status: value ? "in_progress" : "not_started"
         });
     }
     
-    // Handle section output change
+    // Handle section output change - delegates to SectionManager
     handleSectionOutputChange(projectId, sectionId, value) {
+        if (this.sectionManager) {
+            return this.sectionManager.updateSectionOutput(projectId, sectionId, value);
+        }
+        // Fallback
         this.stateManager.updateSection(projectId, sectionId, {
             output: value
         });
     }
     
-    // Handle section notes change
+    // Handle section notes change - delegates to SectionManager
     handleSectionNotesChange(projectId, sectionId, value) {
+        if (this.sectionManager) {
+            return this.sectionManager.updateSectionNotes(projectId, sectionId, value);
+        }
+        // Fallback
         this.stateManager.updateSection(projectId, sectionId, {
             notes: value
         });
     }
     
-    // Handle section override instructions change
+    // Handle section override instructions change - delegates to SectionManager
     handleSectionOverrideInstructionsChange(projectId, sectionId, value) {
+        if (this.sectionManager) {
+            return this.sectionManager.updateSectionOverrideInstructions(projectId, sectionId, value);
+        }
+        // Fallback
         this.stateManager.updateSection(projectId, sectionId, {
             overrideInstructions: value
         });
@@ -3624,14 +4241,93 @@ class PromptSpecApp {
     // Case Selection and Workflow Methods
     // ============================================
     
+    /**
+     * Render case options HTML
+     * @private
+     * @returns {string} HTML string for case options
+     */
+    _renderCaseOptions(cases) {
+        return cases.map(caseInfo => `
+            <div class="case-option" data-case="${caseInfo.number}">
+                <h3>Case ${caseInfo.number}: ${caseInfo.name}</h3>
+                <p>${caseInfo.description}</p>
+            </div>
+        `).join('');
+    }
+    
+    /**
+     * Show case selection fallback prompt
+     * @private
+     * @returns {number|null} Selected case number or null
+     */
+    _showCaseSelectionFallback() {
+        const caseNum = prompt('Select case:\n1 - Codebase Analysis\n2 - UI/UX-Only Analysis\n3 - User Input Analysis\n4 - Input Preparation\n5 - Documentation\n6 - Poiesis\n7 - Physis', '1');
+        return caseNum ? parseInt(caseNum) : null;
+    }
+    
+    /**
+     * Setup event handlers for case selection dialog
+     * @private
+     */
+    _setupCaseSelectionEventHandlers(body, confirmBtn, cancelBtn, closeBtn, modal, resolve) {
+        let selectedCase = null;
+        let selectedEngine = 'file-watching'; // Default
+        
+        // Handle case selection
+        body.querySelectorAll('.case-option').forEach(option => {
+            option.addEventListener('click', () => {
+                body.querySelectorAll('.case-option').forEach(opt => opt.classList.remove('selected'));
+                option.classList.add('selected');
+                selectedCase = parseInt(option.dataset.case);
+                confirmBtn.disabled = false;
+            });
+        });
+        
+        // Handle automation engine selection
+        const engineOptions = document.querySelectorAll('.automation-engine-option');
+        engineOptions.forEach(option => {
+            option.addEventListener('click', () => {
+                engineOptions.forEach(opt => {
+                    opt.classList.remove('selected');
+                });
+                option.classList.add('selected');
+                selectedEngine = option.dataset.engine;
+            });
+        });
+        
+        // Handle confirm
+        const handleConfirm = () => {
+            if (selectedCase) {
+                modal.style.display = 'none';
+                resolve({ caseNumber: selectedCase, automationEngine: selectedEngine });
+            }
+        };
+        
+        // Handle cancel/close
+        const handleCancel = () => {
+            modal.style.display = 'none';
+            resolve(null);
+        };
+        
+        confirmBtn.onclick = handleConfirm;
+        cancelBtn.onclick = handleCancel;
+        closeBtn.onclick = handleCancel;
+        const backdrop = modal.querySelector('.modal-backdrop');
+        if (backdrop) {
+            backdrop.onclick = handleCancel;
+        }
+        
+        // Show modal
+        modal.style.display = 'flex';
+        confirmBtn.disabled = true;
+    }
+    
     // Show case selection dialog
     async showCaseSelectionDialog() {
         return new Promise((resolve) => {
             const modal = document.getElementById('case-selection-modal');
             if (!modal) {
-                // Fallback to simple prompt
-                const caseNum = prompt('Select case:\n1 - Codebase Analysis\n2 - UI/UX-Only Analysis\n3 - User Input Analysis\n4 - Input Preparation\n5 - Documentation\n6 - Poiesis\n7 - Physis', '1');
-                resolve(caseNum ? parseInt(caseNum) : null);
+                resolve(this._showCaseSelectionFallback());
                 return;
             }
             
@@ -3641,84 +4337,23 @@ class PromptSpecApp {
             const closeBtn = document.getElementById('case-selection-close');
             
             if (!body || !confirmBtn || !cancelBtn || !closeBtn) {
-                // Fallback to simple prompt
-                const caseNum = prompt('Select case:\n1 - Codebase Analysis\n2 - UI/UX-Only Analysis\n3 - User Input Analysis\n4 - Input Preparation\n5 - Documentation\n6 - Poiesis\n7 - Physis', '1');
-                resolve(caseNum ? parseInt(caseNum) : null);
+                resolve(this._showCaseSelectionFallback());
                 return;
             }
-            
-            let selectedCase = null;
             
             // Load case options
             const pipelineConfig = window.PipelineConfig;
             if (!pipelineConfig) {
-                // Fallback to simple prompt
-                const caseNum = prompt('Select case:\n1 - Codebase Analysis\n2 - UI/UX-Only Analysis\n3 - User Input Analysis\n4 - Input Preparation\n5 - Documentation\n6 - Poiesis\n7 - Physis', '1');
-                resolve(caseNum ? parseInt(caseNum) : null);
+                resolve(this._showCaseSelectionFallback());
                 return;
             }
             
             pipelineConfig.getAllCases().then(cases => {
-                body.innerHTML = cases.map(caseInfo => `
-                    <div class="case-option" data-case="${caseInfo.number}">
-                        <h3>Case ${caseInfo.number}: ${caseInfo.name}</h3>
-                        <p>${caseInfo.description}</p>
-                    </div>
-                `).join('');
-                
-                // Handle case selection
-                body.querySelectorAll('.case-option').forEach(option => {
-                    option.addEventListener('click', () => {
-                        body.querySelectorAll('.case-option').forEach(opt => opt.classList.remove('selected'));
-                        option.classList.add('selected');
-                        selectedCase = parseInt(option.dataset.case);
-                        confirmBtn.disabled = false;
-                    });
-                });
-                
-                // Handle automation engine selection
-                let selectedEngine = 'file-watching'; // Default
-                const engineOptions = document.querySelectorAll('.automation-engine-option');
-                engineOptions.forEach(option => {
-                    option.addEventListener('click', () => {
-                        engineOptions.forEach(opt => {
-                            opt.classList.remove('selected');
-                        });
-                        option.classList.add('selected');
-                        selectedEngine = option.dataset.engine;
-                    });
-                });
-                
-                // Handle confirm
-                const handleConfirm = () => {
-                    if (selectedCase) {
-                        modal.style.display = 'none';
-                        resolve({ caseNumber: selectedCase, automationEngine: selectedEngine });
-                    }
-                };
-                
-                // Handle cancel/close
-                const handleCancel = () => {
-                    modal.style.display = 'none';
-                    resolve(null);
-                };
-                
-                confirmBtn.onclick = handleConfirm;
-                cancelBtn.onclick = handleCancel;
-                closeBtn.onclick = handleCancel;
-                const backdrop = modal.querySelector('.modal-backdrop');
-                if (backdrop) {
-                    backdrop.onclick = handleCancel;
-                }
-                
-                // Show modal
-                modal.style.display = 'flex';
-                confirmBtn.disabled = true;
+                body.innerHTML = this._renderCaseOptions(cases);
+                this._setupCaseSelectionEventHandlers(body, confirmBtn, cancelBtn, closeBtn, modal, resolve);
             }).catch(error => {
                 console.error('Error loading cases:', error);
-                // Fallback to simple prompt
-                const caseNum = prompt('Select case:\n1 - Codebase Analysis\n2 - UI/UX-Only Analysis\n3 - User Input Analysis', '1');
-                resolve(caseNum ? parseInt(caseNum) : null);
+                resolve(this._showCaseSelectionFallback());
             });
         });
     }
@@ -3761,17 +4396,25 @@ class PromptSpecApp {
             const availableModifierNames = stepConfig?.modifiers || [];
             
             // Create modifier checkboxes
-            body.innerHTML = availableModifierNames.map(modifierName => {
+            // modifierName is from config (trusted), but sanitize for safety
+            const modifierHtml = availableModifierNames.map(modifierName => {
                 const isChecked = currentModifiers.includes(modifierName);
                 const modifierDef = pipelineConfig?.getModifier(modifierName);
+                const escapedName = this.escapeHtml(modifierName);
+                const escapedDesc = modifierDef?.description ? this.escapeHtml(modifierDef.description) : '';
                 return `
                     <div class="modifier-checkbox">
-                        <input type="checkbox" id="modifier-${modifierName}" value="${modifierName}" ${isChecked ? 'checked' : ''}>
-                        <label for="modifier-${modifierName}">${modifierName}</label>
-                        ${modifierDef?.description ? `<div class="modifier-description">${modifierDef.description}</div>` : ''}
+                        <input type="checkbox" id="modifier-${escapedName}" value="${escapedName}" ${isChecked ? 'checked' : ''}>
+                        <label for="modifier-${escapedName}">${escapedName}</label>
+                        ${escapedDesc ? `<div class="modifier-description">${escapedDesc}</div>` : ''}
                     </div>
                 `;
             }).join('');
+            if (window.safeSetInnerHTML) {
+                window.safeSetInnerHTML(body, modifierHtml, { trusted: false });
+            } else {
+                body.innerHTML = modifierHtml;
+            }
             
             // Handle save
             const handleSave = () => {
@@ -3875,7 +4518,15 @@ class PromptSpecApp {
     }
     
     // Invoke a process step
+    // Invoke process step - delegates to SectionManager
     async invokeProcessStep(projectId, sectionId, processStepType) {
+        if (this.sectionManager) {
+            return await this.sectionManager.invokeProcessStep(projectId, sectionId, processStepType);
+        }
+    }
+    
+    // Legacy invokeProcessStep implementation (if needed for fallback)
+    async _invokeProcessStep(projectId, sectionId, processStepType) {
         const project = this.stateManager.getProject(projectId);
         if (!project) return;
         
@@ -3961,14 +4612,12 @@ class PromptSpecApp {
         }
     }
     
-    // Show dialog to add a step to the pipeline (at the end or after a selected section)
-    async showAddStepDialog(projectId, referenceSectionId = null, position = null) {
-        const project = this.stateManager.getProject(projectId);
-        if (!project) return;
-        
-        const pipelineConfig = window.PipelineConfig;
-        await pipelineConfig.loadConfig();
-        
+    /**
+     * Prepare step dialog data from pipeline config
+     * @private
+     * @returns {Object} Object with existingSteps and stepsByCase arrays
+     */
+    async _prepareStepDialogData(project, pipelineConfig) {
         // Get existing steps in project
         const existingSteps = project.sections.map(s => ({
             sectionId: s.sectionId,
@@ -3980,8 +4629,7 @@ class PromptSpecApp {
         // Get all cases and their steps
         const config = pipelineConfig.config;
         if (!config || !config.cases) {
-            alert('Unable to load pipeline configuration.');
-            return;
+            return { existingSteps, stepsByCase: [] };
         }
         
         const stepsByCase = [];
@@ -4033,10 +4681,16 @@ class PromptSpecApp {
             }
         }
         
-        // Create modal
-        const modal = document.createElement('div');
-        modal.className = 'modal';
-        modal.innerHTML = `
+        return { existingSteps, stepsByCase };
+    }
+    
+    /**
+     * Render HTML for add step dialog
+     * @private
+     * @returns {string} HTML string for modal
+     */
+    _renderAddStepDialogHTML(existingSteps, stepsByCase, project, referenceSectionId, position) {
+        return `
             <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
                 <div class="modal-header">
                     <h2>${referenceSectionId ? (position === 'above' ? 'Insert Step Above' : 'Insert Step Below') : 'Add Step'}</h2>
@@ -4142,14 +4796,48 @@ class PromptSpecApp {
                 </div>
             </div>
         `;
+    }
+    
+    /**
+     * Handle step selection and insertion
+     * @private
+     */
+    async _handleStepSelection(projectId, stepName, stepType, targetReferenceSectionId, insertPosition, project) {
+        // Add the step immediately
+        if (targetReferenceSectionId) {
+            await this.insertStep(projectId, targetReferenceSectionId, insertPosition, stepType, stepName);
+        } else {
+            // Add at the beginning if no sections exist
+            let newSection = null;
+            if (stepType === 'core') {
+                newSection = await this.stateManager.insertCoreStep(projectId, 0, stepName);
+            } else if (stepType === 'process') {
+                // Process steps need a reference section, so we can't add at the beginning
+                alert('Process steps must be added after an existing section.');
+                return;
+            } else if (stepType === 'inference') {
+                newSection = await this.stateManager.insertInferenceStep(projectId, 0, stepName);
+            }
+            
+            if (newSection) {
+                await this.loadPromptsForProject(projectId);
+                this.navigateToSection(projectId, newSection.sectionId);
+            }
+        }
         
-        document.body.appendChild(modal);
-        modal.style.display = 'flex'; // Show the modal
-        
-        const cancelBtn = document.getElementById('add-step-cancel');
-        const closeBtn = modal.querySelector('.modal-close');
-        const positionSelect = document.getElementById('step-position-select');
-        
+        // Re-render and close modal
+        this.renderingEngine.renderAll();
+        const pipelineFlowView = document.getElementById('pipeline-flow-view');
+        if (pipelineFlowView && pipelineFlowView.style.display !== 'none') {
+            this.renderingEngine.renderPipelineFlowView();
+        }
+    }
+    
+    /**
+     * Setup event handlers for add step dialog
+     * @private
+     */
+    _setupAddStepDialogEventHandlers(modal, projectId, project, positionSelect, referenceSectionId) {
         // Handle step selection - add immediately on click
         modal.querySelectorAll('.step-option-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
@@ -4189,34 +4877,7 @@ class PromptSpecApp {
                     }
                 }
                 
-                // Add the step immediately
-                if (targetReferenceSectionId) {
-                    await this.insertStep(projectId, targetReferenceSectionId, insertPosition, stepType, stepName);
-                } else {
-                    // Add at the beginning if no sections exist
-                    let newSection = null;
-                    if (stepType === 'core') {
-                        newSection = await this.stateManager.insertCoreStep(projectId, 0, stepName);
-                    } else if (stepType === 'process') {
-                        // Process steps need a reference section, so we can't add at the beginning
-                        alert('Process steps must be added after an existing section.');
-                        return;
-                    } else if (stepType === 'inference') {
-                        newSection = await this.stateManager.insertInferenceStep(projectId, 0, stepName);
-                    }
-                    
-                    if (newSection) {
-                        await this.loadPromptsForProject(projectId);
-                        this.navigateToSection(projectId, newSection.sectionId);
-                    }
-                }
-                
-                // Re-render and close modal
-                this.renderingEngine.renderAll();
-                const pipelineFlowView = document.getElementById('pipeline-flow-view');
-                if (pipelineFlowView && pipelineFlowView.style.display !== 'none') {
-                    this.renderingEngine.renderPipelineFlowView();
-                }
+                await this._handleStepSelection(projectId, stepName, stepType, targetReferenceSectionId, insertPosition, project);
                 modal.remove();
             });
         });
@@ -4226,6 +4887,8 @@ class PromptSpecApp {
             modal.remove();
         };
         
+        const cancelBtn = document.getElementById('add-step-cancel');
+        const closeBtn = modal.querySelector('.modal-close');
         cancelBtn.onclick = handleCancel;
         closeBtn.onclick = handleCancel;
         
@@ -4233,6 +4896,34 @@ class PromptSpecApp {
         modal.addEventListener('click', (e) => {
             if (e.target === modal) handleCancel();
         });
+    }
+    
+    // Show dialog to add a step to the pipeline (at the end or after a selected section)
+    async showAddStepDialog(projectId, referenceSectionId = null, position = null) {
+        const project = this.stateManager.getProject(projectId);
+        if (!project) return;
+        
+        const pipelineConfig = window.PipelineConfig;
+        await pipelineConfig.loadConfig();
+        
+        // Prepare dialog data
+        const { existingSteps, stepsByCase } = await this._prepareStepDialogData(project, pipelineConfig);
+        
+        if (stepsByCase.length === 0) {
+            alert('Unable to load pipeline configuration.');
+            return;
+        }
+        
+        // Create modal
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = this._renderAddStepDialogHTML(existingSteps, stepsByCase, project, referenceSectionId, position);
+        
+        document.body.appendChild(modal);
+        modal.style.display = 'flex';
+        
+        const positionSelect = document.getElementById('step-position-select');
+        this._setupAddStepDialogEventHandlers(modal, projectId, project, positionSelect, referenceSectionId);
     }
     
     // Insert a custom step
@@ -4273,7 +4964,15 @@ class PromptSpecApp {
     }
     
     // Autosave current project group before loading a different one
+    // Autosave current project group - delegates to ProjectManager
     async autosaveCurrentProjectGroup() {
+        if (this.projectManager) {
+            return await this.projectManager.autosaveCurrentProjectGroup();
+        }
+    }
+    
+    // Legacy autosaveCurrentProjectGroup implementation (if needed for fallback)
+    async _autosaveCurrentProjectGroup() {
         if (!this.autosaveEnabled) return;
         
         const state = this.stateManager.getState();
@@ -4293,7 +4992,15 @@ class PromptSpecApp {
     }
     
     // Populate project group dropdown with saved files
+    // Populate project group dropdown - delegates to ProjectManager
     async populateProjectGroupDropdown() {
+        if (this.projectManager) {
+            return await this.projectManager.populateProjectGroupDropdown();
+        }
+    }
+    
+    // Legacy populateProjectGroupDropdown implementation (if needed for fallback)
+    async _populateProjectGroupDropdown() {
         const projectGroupSelect = document.getElementById('project-group-select');
         if (!projectGroupSelect) return;
         
@@ -4308,7 +5015,7 @@ class PromptSpecApp {
             
             if (result.success && result.files && result.files.length > 0) {
                 // Clear existing options
-                projectGroupSelect.innerHTML = '';
+                projectGroupSelect.innerHTML = ''; // Clearing - safe
                 
                 // Add file options
                 result.files.forEach(file => {
@@ -4336,7 +5043,7 @@ class PromptSpecApp {
                 }
             } else {
                 // No saved files, but show current project group if we have one
-                projectGroupSelect.innerHTML = '';
+                projectGroupSelect.innerHTML = ''; // Clearing - safe
                 if (currentProjectGroupName && currentFilename) {
                     const option = document.createElement('option');
                     option.value = currentFilename;
@@ -4369,7 +5076,20 @@ class PromptSpecApp {
     }
     
     // Load project group from file
+    // Load project group from file - delegates to ProjectManager
     async loadProjectGroupFromFile(filename) {
+        if (this.projectManager) {
+            return await this.projectManager.loadProjectGroupFromFile(filename, {
+                showLoadingOverlay: this.showLoadingOverlay.bind(this),
+                hideLoadingOverlay: this.hideLoadingOverlay.bind(this),
+                loadPromptsForProject: this.loadPromptsForProject.bind(this),
+                setupProjectGroupDropdownListeners: this.setupProjectGroupDropdownListeners.bind(this)
+            });
+        }
+    }
+    
+    // Legacy loadProjectGroupFromFile implementation (if needed for fallback)
+    async _loadProjectGroupFromFile(filename) {
         // Show loading overlay
         this.showLoadingOverlay('Loading project group...');
         
@@ -4437,14 +5157,42 @@ class PromptSpecApp {
                 // Update dropdown AFTER state is loaded
                 await this.populateProjectGroupDropdown();
             } else {
-                alert('Invalid file format: File must contain either "pages" or "projects" array');
+                const error = 'Invalid file format: File must contain either "pages" or "projects" array';
+                if (this.errorHandler) {
+                    this.errorHandler.showUserNotification(error, {
+                        source: 'PromptSpecApp',
+                        operation: 'loadProjectGroup',
+                        filename: filename
+                    }, {
+                        severity: ErrorHandler.Severity.ERROR,
+                        title: 'Invalid File Format'
+                    });
+                } else {
+                    alert(error);
+                }
             }
             
             // Re-attach listeners after DOM changes
             this.setupProjectGroupDropdownListeners();
         } catch (error) {
             console.error('Load project group error:', error);
-            alert('Failed to load project group: ' + error.message);
+            if (this.errorHandler) {
+                this.errorHandler.handleError(error, {
+                    source: 'PromptSpecApp',
+                    operation: 'loadProjectGroup',
+                    filename: filename
+                });
+                this.errorHandler.showUserNotification(error, {
+                    source: 'PromptSpecApp',
+                    operation: 'loadProjectGroup',
+                    filename: filename
+                }, {
+                    severity: ErrorHandler.Severity.ERROR,
+                    title: 'Load Failed'
+                });
+            } else {
+                alert('Failed to load project group: ' + error.message);
+            }
         } finally {
             // Hide loading overlay
             this.hideLoadingOverlay();
@@ -4452,7 +5200,15 @@ class PromptSpecApp {
     }
     
     // Show loading overlay
+    // Show loading overlay - delegates to UIManager
     showLoadingOverlay(text = 'Loading...') {
+        if (this.uiManager) {
+            return this.uiManager.showLoadingOverlay(text);
+        }
+    }
+    
+    // Legacy showLoadingOverlay implementation (if needed for fallback)
+    _showLoadingOverlay(text = 'Loading...') {
         const overlay = document.getElementById('loading-overlay');
         const loadingText = overlay?.querySelector('.loading-text');
         if (overlay) {
@@ -4582,6 +5338,7 @@ class PromptSpecApp {
         }
         
         // Show loading state
+        // Static message - safe
         content.innerHTML = '<p style="color: #888;">Loading guidance...</p>';
         modal.style.display = 'flex';
         
@@ -4630,8 +5387,9 @@ class PromptSpecApp {
                             inList = true;
                         }
                         const listContent = line.replace(/^[-*•]\s+/, '');
-                        // Process bold/italic in list items
-                        const processedContent = listContent
+                        // Process bold/italic in list items - escape first
+                        const escapedContent = this.escapeHtml(listContent);
+                        const processedContent = escapedContent
                             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                             .replace(/\*(.*?)\*/g, '<em>$1</em>');
                         html += `<li style="margin: 5px 0;">${processedContent}</li>`;
@@ -4883,11 +5641,24 @@ class PromptSpecApp {
         const oldId = section.automationId || '';
         console.log(`[DIAG] Current automationId in state: ${oldId}`);
         
-        // Validate ID format (alphanumeric, underscore, hyphen only)
-        if (newId && !/^[a-zA-Z0-9_\-]+$/.test(newId)) {
-            this.showAutomationIdStatus(projectId, sectionId, 'Invalid characters. Use only letters, numbers, underscore, or hyphen.', 'error');
-            console.log(`[DIAG] Validation failed for automationId: ${newId} (invalid format)`);
-            return;
+        // Validate ID format using InputValidator if available
+        if (newId) {
+            if (window.validateAutomationId) {
+                const validation = window.validateAutomationId(newId);
+                if (!validation.valid) {
+                    this.showAutomationIdStatus(projectId, sectionId, validation.error || 'Invalid automation ID format.', 'error');
+                    console.log(`[DIAG] Validation failed for automationId: ${newId} (${validation.error})`);
+                    return;
+                }
+                newId = validation.sanitized;
+            } else {
+                // Fallback validation (alphanumeric, underscore, hyphen only)
+                if (!/^[a-zA-Z0-9_\-]+$/.test(newId)) {
+                    this.showAutomationIdStatus(projectId, sectionId, 'Invalid characters. Use only letters, numbers, underscore, or hyphen.', 'error');
+                    console.log(`[DIAG] Validation failed for automationId: ${newId} (invalid format)`);
+                    return;
+                }
+            }
         }
         
         // Check for uniqueness
@@ -4952,7 +5723,17 @@ class PromptSpecApp {
     }
     
     // Generate default 4-character alphanumeric ID
+    // Generate default automation ID - delegates to ProjectManager
     generateDefaultAutomationId(projectId, sectionId) {
+        if (this.projectManager) {
+            return this.projectManager.generateDefaultAutomationId(projectId, sectionId);
+        }
+        // Fallback
+        return this.randomId(4);
+    }
+    
+    // Legacy generateDefaultAutomationId implementation (if needed for fallback)
+    _generateDefaultAutomationId(projectId, sectionId) {
         const project = this.stateManager.getProject(projectId);
         if (!project) return this.randomId(4);
         
@@ -5004,7 +5785,7 @@ class PromptSpecApp {
                     if (statusEl.textContent === message) {
                         statusEl.textContent = '';
                     }
-                }, 2000);
+                }, AppConstants.TIMEOUTS.MODAL_AUTO_CLOSE);
             }
         }
     }
@@ -5454,6 +6235,23 @@ class PromptSpecApp {
             // Remove {AUTOMATION_DIR} placeholder if present
             const cleanDir = suggestedDir.replace(/\{AUTOMATION_DIR\}/g, '').trim();
             if (cleanDir && cleanDir !== './automation-output') {
+                // Validate path if InputValidator is available
+                if (window.validatePath) {
+                    const pathValidation = window.validatePath(cleanDir);
+                    if (!pathValidation.valid) {
+                        if (this.errorHandler) {
+                            this.errorHandler.showUserNotification(pathValidation.error, {
+                                source: 'PromptSpecApp',
+                                operation: 'setAutomationDirectory',
+                                projectId
+                            }, {
+                                severity: ErrorHandler.Severity.WARNING,
+                                title: 'Invalid Directory Path'
+                            });
+                        }
+                        return;
+                    }
+                }
                 // Update project with suggested directory
                 this.stateManager.updateProject(projectId, { automationDirectory: cleanDir });
                 // Update the input field if it exists
@@ -5494,13 +6292,15 @@ class PromptSpecApp {
                 const result = await response.json();
                 
                 if (result.success && result.files && result.files.length > 0) {
-                    savedFilesList.innerHTML = result.files.map(file => {
+                    // file.name is from server - escape for safety
+                    const filesHtml = result.files.map(file => {
                         const date = new Date(file.modified);
                         const sizeKB = (file.size / 1024).toFixed(2);
+                        const escapedName = this.escapeHtml(file.name);
                         return `
-                            <div class="file-item" data-filename="${file.name}" style="padding: 10px; margin: 5px 0; background: #2d2d2d; border-radius: 4px; cursor: pointer; border: 2px solid transparent; transition: all 0.2s; display: flex; justify-content: space-between; align-items: center;">
+                            <div class="file-item" data-filename="${escapedName}" style="padding: 10px; margin: 5px 0; background: #2d2d2d; border-radius: 4px; cursor: pointer; border: 2px solid transparent; transition: all 0.2s; display: flex; justify-content: space-between; align-items: center;">
                                 <div style="flex: 1; min-width: 0;">
-                                    <div style="font-weight: 500; color: #e0e0e0;">${file.name}</div>
+                                    <div style="font-weight: 500; color: #e0e0e0;">${escapedName}</div>
                                     <div style="font-size: 0.85em; color: #888; margin-top: 4px;">
                                         ${sizeKB} KB • ${date.toLocaleString()}
                                     </div>
@@ -5586,10 +6386,12 @@ class PromptSpecApp {
                         });
                     });
                 } else {
+                    // Static message - safe
                     savedFilesList.innerHTML = '<p style="color: #888; text-align: center; padding: 20px;">No saved files found.</p>';
                 }
             } catch (error) {
                 console.error('Failed to load server files:', error);
+                // Static error message - safe
                 savedFilesList.innerHTML = '<p style="color: #ff5555; text-align: center; padding: 20px;">Failed to load files from server.</p>';
             }
         };
@@ -5715,7 +6517,21 @@ class PromptSpecApp {
                 }
             } catch (err) {
                 console.error('Load file error:', err);
-                alert('Failed to load file: ' + err.message);
+                if (this.errorHandler) {
+                    this.errorHandler.handleError(err, {
+                        source: 'PromptSpecApp',
+                        operation: 'loadFile'
+                    });
+                    this.errorHandler.showUserNotification(err, {
+                        source: 'PromptSpecApp',
+                        operation: 'loadFile'
+                    }, {
+                        severity: ErrorHandler.Severity.ERROR,
+                        title: 'Load Failed'
+                    });
+                } else {
+                    alert('Failed to load file: ' + err.message);
+                }
             } finally {
                 // Hide loading overlay
                 this.hideLoadingOverlay();
@@ -5783,7 +6599,18 @@ class PromptSpecApp {
             newDefaultDir = newDefaultDir.replace(/\\/g, '/');
             
             if (!newName) {
-                alert('Project group name is required.');
+                const error = 'Project group name is required.';
+                if (this.errorHandler) {
+                    this.errorHandler.showUserNotification(error, {
+                        source: 'PromptSpecApp',
+                        operation: 'saveProjectGroup'
+                    }, {
+                        severity: ErrorHandler.Severity.WARNING,
+                        title: 'Project Group Name Required'
+                    });
+                } else {
+                    alert(error);
+                }
                 return;
             }
             
@@ -5928,79 +6755,20 @@ class PromptSpecApp {
     }
     
     // Delete project group
+    // Delete project group - delegates to ProjectManager
     async deleteProjectGroup() {
-        const state = this.stateManager.getState();
-        const projectGroupName = state.metadata?.projectGroupName;
-        
-        if (!projectGroupName || !projectGroupName.trim()) {
-            alert('No project group is currently loaded.');
-            return;
-        }
-        
-        const filename = `${projectGroupName.trim().replace(/[^a-z0-9]/gi, '_')}.json`;
-        
-        if (!confirm(`Are you sure you want to delete the project group "${projectGroupName}"?\n\nThis will delete the file "${filename}" from the server. This action cannot be undone.`)) {
-            return;
-        }
-        
-        try {
-            // Delete file from server
-            const response = await fetch('/api/delete-file', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filename })
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Server error: ${response.status}`);
-            }
-            
-            const result = await response.json();
-            if (!result.success) {
-                throw new Error(result.error || 'Failed to delete file');
-            }
-            
-            // Clear current project group from state
-            this.stateManager.setState({
-                metadata: {
-                    ...state.metadata,
-                    projectGroupName: null,
-                    projectGroupDescription: null,
-                    projectGroupTags: null
-                }
-            });
-            
-            // Update UI
-            const projectGroupInput = document.getElementById('project-group-name');
-            const projectGroupSelect = document.getElementById('project-group-select');
-            
-            if (projectGroupInput) {
-                projectGroupInput.value = '';
-                projectGroupInput.style.display = 'none';
-            }
-            if (projectGroupSelect) {
-                projectGroupSelect.value = '';
-                projectGroupSelect.style.display = 'block';
-            }
-            
-            this.currentProjectGroupName = null;
-            
-            // Refresh dropdown
-            await this.populateProjectGroupDropdown();
-            
-            alert(`Project group "${projectGroupName}" has been deleted.`);
-        } catch (err) {
-            console.error('Error deleting project group:', err);
-            alert('Failed to delete project group: ' + err.message);
+        if (this.projectManager) {
+            return await this.projectManager.deleteProjectGroup();
         }
     }
+    
     
     // Setup chat system handlers
     setupChatHandlers() {
         // Wait for chat system to be initialized
         if (!this.chatSystem || !this.chatWindow) {
             // Retry after a short delay if not ready
-            setTimeout(() => this.setupChatHandlers(), 100);
+            setTimeout(() => this.setupChatHandlers(), AppConstants.TIMEOUTS.MODULE_LOAD_DELAY);
             return;
         }
         

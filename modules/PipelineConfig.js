@@ -1,10 +1,11 @@
 // Pipeline Configuration - Loads from pipeline-config.json and provides case-based workflow management
 class PipelineConfig {
-    constructor() {
+    constructor(errorHandler = null) {
         this.config = null;
         this.loaded = false;
         this.loading = false;
         this.sections = []; // Legacy support - will be populated from config
+        this.errorHandler = errorHandler;
     }
     
     // Load configuration from JSON file
@@ -16,7 +17,7 @@ class PipelineConfig {
         if (this.loading) {
             // Wait for existing load to complete
             while (this.loading) {
-                await new Promise(resolve => setTimeout(resolve, 100));
+                await new Promise(resolve => setTimeout(resolve, AppConstants.TIMEOUTS.MODULE_LOAD_DELAY));
             }
             return this.config;
         }
@@ -24,7 +25,7 @@ class PipelineConfig {
         this.loading = true;
         
         try {
-            // Try multiple path options
+            // Try multiple path options with retry logic
             const pathOptions = [
                 'reference/pipeline-config.json',
                 './reference/pipeline-config.json',
@@ -32,33 +33,94 @@ class PipelineConfig {
                 '/feat-spec/reference/pipeline-config.json'
             ];
             
-            let response;
-            let lastError = null;
-            let lastStatus = null;
-            
-            for (const path of pathOptions) {
-                try {
-                    response = await fetch(path);
-                    if (response.ok) {
-                        this.config = await response.json();
-                        this.loaded = true;
-                        this.loading = false;
-                        return this.config;
-                    } else {
-                        lastStatus = response.status;
-                    }
-                } catch (err) {
-                    lastError = err;
-                    continue;
+            if (this.errorHandler) {
+                const result = await this.errorHandler.handleAsyncWithRetry(
+                    async () => {
+                        let lastError = null;
+                        let lastStatus = null;
+                        
+                        for (const path of pathOptions) {
+                            try {
+                                const response = await fetch(path);
+                                if (response.ok) {
+                                    return await response.json();
+                                } else {
+                                    lastStatus = response.status;
+                                }
+                            } catch (err) {
+                                lastError = err;
+                                continue;
+                            }
+                        }
+                        
+                        // If all paths failed, throw error
+                        throw new Error(`Failed to load pipeline-config.json. Status: ${lastStatus || 'unknown'}. Tried paths: ${pathOptions.join(', ')}`);
+                    },
+                    { source: 'PipelineConfig', operation: 'loadConfig' },
+                    { maxRetries: 3, baseDelay: 1000 }
+                );
+                
+                if (!result.success) {
+                    this.loading = false;
+                    this.errorHandler.showUserNotification(result.error, {
+                        source: 'PipelineConfig',
+                        operation: 'loadConfig'
+                    }, {
+                        severity: ErrorHandler.Severity.ERROR,
+                        title: 'Failed to Load Pipeline Configuration'
+                    });
+                    throw new Error(result.error);
                 }
+                
+                this.config = result.data;
+                this.loaded = true;
+                this.loading = false;
+                return this.config;
+            } else {
+                // Fallback to original logic
+                let response;
+                let lastError = null;
+                let lastStatus = null;
+                
+                for (const path of pathOptions) {
+                    try {
+                        response = await fetch(path);
+                        if (response.ok) {
+                            this.config = await response.json();
+                            this.loaded = true;
+                            this.loading = false;
+                            return this.config;
+                        } else {
+                            lastStatus = response.status;
+                        }
+                    } catch (err) {
+                        lastError = err;
+                        continue;
+                    }
+                }
+                
+                // If all paths failed, throw error
+                throw new Error(`Failed to load pipeline-config.json. Status: ${lastStatus || 'unknown'}. Tried paths: ${pathOptions.join(', ')}`);
             }
-            
-            // If all paths failed, throw error
-            throw new Error(`Failed to load pipeline-config.json. Status: ${lastStatus || 'unknown'}. Tried paths: ${pathOptions.join(', ')}`);
         } catch (error) {
-            console.error('Error loading pipeline configuration:', error);
             this.loading = false;
-            throw error;
+            if (this.errorHandler && !(error instanceof Error && error.message.includes('Failed to load'))) {
+                const errorResult = this.errorHandler.handleError(error, {
+                    source: 'PipelineConfig',
+                    operation: 'loadConfig'
+                });
+                this.errorHandler.showUserNotification(error, {
+                    source: 'PipelineConfig',
+                    operation: 'loadConfig'
+                }, {
+                    severity: ErrorHandler.Severity.ERROR,
+                    title: 'Failed to Load Pipeline Configuration'
+                });
+                throw new Error(errorResult.error);
+            } else {
+                console.error('Error loading pipeline configuration:', error);
+                throw error;
+            }
         }
     }
     
@@ -431,4 +493,4 @@ class PipelineConfig {
 }
 
 // Export singleton instance
-window.PipelineConfig = new PipelineConfig();
+window.PipelineConfig = new PipelineConfig(window.ErrorHandler || null);

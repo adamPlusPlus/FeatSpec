@@ -1,6 +1,6 @@
 // Prompt Loader - Loads core steps, modifiers, and assembles prompts with modifier injection
 class PromptLoader {
-    constructor() {
+    constructor(errorHandler = null) {
         this.coreSteps = new Map(); // Cache: stepName -> content
         this.modifiers = new Map(); // Cache: stepName/modifierName -> content
         this.processSteps = new Map(); // Cache: processStepName -> content
@@ -9,6 +9,7 @@ class PromptLoader {
         this.loading = false;
         this.basePath = 'reference/pipeline-steps/';
         this.referenceDocuments = null; // Will be set if ReferenceDocuments is available
+        this.errorHandler = errorHandler;
     }
     
     // Load all core steps, modifiers, and process steps
@@ -20,7 +21,7 @@ class PromptLoader {
         if (this.loading) {
             // Wait for existing load to complete
             while (this.loading) {
-                await new Promise(resolve => setTimeout(resolve, 100));
+                await new Promise(resolve => setTimeout(resolve, AppConstants.TIMEOUTS.MODULE_LOAD_DELAY));
             }
             return;
         }
@@ -61,9 +62,24 @@ class PromptLoader {
             this.loaded = true;
             this.loading = false;
         } catch (error) {
-            console.error('Error loading prompt templates:', error);
             this.loading = false;
-            throw error;
+            if (this.errorHandler) {
+                const errorResult = this.errorHandler.handleError(error, {
+                    source: 'PromptLoader',
+                    operation: 'loadTemplate'
+                });
+                this.errorHandler.showUserNotification(error, {
+                    source: 'PromptLoader',
+                    operation: 'loadTemplate'
+                }, {
+                    severity: ErrorHandler.Severity.ERROR,
+                    title: 'Failed to Load Prompt Templates'
+                });
+                throw new Error(errorResult.error);
+            } else {
+                console.error('Error loading prompt templates:', error);
+                throw error;
+            }
         }
     }
     
@@ -149,7 +165,7 @@ class PromptLoader {
         return content;
     }
     
-    // Fetch a file with multiple path options
+    // Fetch a file with multiple path options and retry logic
     async fetchFile(relativePath) {
         const pathOptions = [
             this.basePath + relativePath,
@@ -158,25 +174,73 @@ class PromptLoader {
             '/feat-spec/' + this.basePath + relativePath
         ];
         
-        let lastError = null;
-        let lastStatus = null;
-        
-        for (const path of pathOptions) {
-            try {
-                const response = await fetch(path);
-                if (response.ok) {
-                    return await response.text();
-                } else {
-                    lastStatus = response.status;
+        // Use ErrorHandler with retry logic if available
+        if (this.errorHandler) {
+            const result = await this.errorHandler.handleAsyncWithRetry(
+                async () => {
+                    let lastError = null;
+                    let lastStatus = null;
+                    
+                    for (const path of pathOptions) {
+                        try {
+                            const response = await fetch(path);
+                            if (response.ok) {
+                                return await response.text();
+                            } else {
+                                lastStatus = response.status;
+                            }
+                        } catch (err) {
+                            lastError = err;
+                            continue;
+                        }
+                    }
+                    
+                    // All paths failed
+                    throw new Error(`Failed to load ${relativePath}. Status: ${lastStatus || 'unknown'}. Tried paths: ${pathOptions.join(', ')}`);
+                },
+                { source: 'PromptLoader', operation: 'fetchFile', filePath: relativePath },
+                { maxRetries: 2, baseDelay: 500 }
+            );
+            
+            if (!result.success) {
+                // Only show notification for critical files (core steps, process steps)
+                const isCritical = relativePath.includes('core/') || relativePath.includes('process-steps/');
+                if (isCritical) {
+                    this.errorHandler.showUserNotification(result.error, {
+                        source: 'PromptLoader',
+                        operation: 'fetchFile',
+                        filePath: relativePath
+                    }, {
+                        severity: ErrorHandler.Severity.WARNING,
+                        title: 'Failed to Load File'
+                    });
                 }
-            } catch (err) {
-                lastError = err;
-                continue;
+                return null;
             }
+            
+            return result.data;
+        } else {
+            // Fallback to original logic
+            let lastError = null;
+            let lastStatus = null;
+            
+            for (const path of pathOptions) {
+                try {
+                    const response = await fetch(path);
+                    if (response.ok) {
+                        return await response.text();
+                    } else {
+                        lastStatus = response.status;
+                    }
+                } catch (err) {
+                    lastError = err;
+                    continue;
+                }
+            }
+            
+            console.warn(`Failed to load ${relativePath}. Status: ${lastStatus || 'unknown'}. Tried paths: ${pathOptions.join(', ')}`);
+            return null;
         }
-        
-        console.warn(`Failed to load ${relativePath}. Status: ${lastStatus || 'unknown'}. Tried paths: ${pathOptions.join(', ')}`);
-        return null;
     }
     
     // Inject modifiers into a core step
@@ -758,4 +822,4 @@ class PromptLoader {
 }
 
 // Export singleton instance
-window.PromptLoader = new PromptLoader();
+window.PromptLoader = new PromptLoader(window.ErrorHandler || null);

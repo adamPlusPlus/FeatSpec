@@ -1,14 +1,145 @@
 // Rendering Engine - Renders UI components to DOM
 class RenderingEngine {
-    constructor(eventSystem, stateManager, dragDropHandler) {
+    constructor(eventSystem, stateManager, dragDropHandler, services = {}, managers = {}, errorHandler = null) {
         this.eventSystem = eventSystem;
         this.stateManager = stateManager;
         this.dragDropHandler = dragDropHandler;
+        this.errorHandler = errorHandler;
         this.container = document.getElementById('pages-container'); // Legacy
         this.activeProjectId = null;
         this.activeSectionId = null;
         
+        // Services for business logic
+        this.sectionLogic = services.sectionLogic;
+        this.navigation = services.navigation;
+        this.caseInfo = services.caseInfo;
+        this.workflowContext = services.workflowContext;
+        this.processSteps = services.processSteps;
+        this.placeholder = services.placeholder;
+        
+        // Managers for operations
+        this.projectManager = managers.projectManager;
+        this.sectionManager = managers.sectionManager;
+        this.uiManager = managers.uiManager;
+        this.multiAgentAutomation = managers.multiAgentAutomation; // For agent discussions
+        this.appInstance = managers.appInstance; // For methods not yet in managers
+        
         this.setupEventListeners();
+        this.setupDynamicEventListeners();
+    }
+    
+    setupDynamicEventListeners() {
+        // Use event delegation for dynamically generated buttons
+        document.addEventListener('click', (e) => {
+            const action = e.target.dataset.action;
+            if (!action) return;
+            
+            const projectId = e.target.dataset.projectId;
+            const sectionId = e.target.dataset.sectionId;
+            const modifier = e.target.dataset.modifier;
+            
+            switch (action) {
+                case 'navigate-section':
+                    if (projectId && sectionId && this.sectionManager) {
+                        this.sectionManager.navigateToSection(projectId, sectionId);
+                    }
+                    break;
+                case 'paste-previous':
+                    if (projectId && sectionId && this.sectionManager) {
+                        this.sectionManager.pasteFromPreviousSection(projectId, sectionId);
+                    }
+                    break;
+                case 'mark-complete':
+                    if (projectId && sectionId && this.sectionManager) {
+                        this.sectionManager.markSectionComplete(projectId, sectionId);
+                        this.renderAll();
+                    }
+                    break;
+                case 'mark-revision':
+                    if (projectId && sectionId && this.sectionManager) {
+                        this.sectionManager.markSectionNeedsRevision(projectId, sectionId);
+                        this.renderAll();
+                    }
+                    break;
+                case 'copy-prompt-input':
+                    if (projectId && sectionId && this.appInstance) {
+                        this.appInstance.copyPromptWithInput?.(projectId, sectionId);
+                    }
+                    break;
+                case 'edit-modifiers':
+                    if (projectId && sectionId && this.appInstance) {
+                        this.appInstance.showModifierEditorModal?.(projectId, sectionId);
+                    }
+                    break;
+                case 'remove-modifier':
+                    if (projectId && sectionId && modifier && this.appInstance) {
+                        this.appInstance.removeModifier?.(projectId, sectionId, modifier);
+                    }
+                    break;
+                case 'show-agent-conversations':
+                    if (projectId && sectionId && this.appInstance) {
+                        e.stopPropagation();
+                        this.appInstance.showAgentConversations?.(projectId, sectionId);
+                    }
+                    break;
+                case 'delete-page':
+                    if (e.target.dataset.pageId && this.appInstance) {
+                        if (confirm('Delete this page?')) {
+                            this.appInstance.deletePage?.(e.target.dataset.pageId);
+                        }
+                    }
+                    break;
+                case 'remove-multi-checkbox-item':
+                    if (e.target.dataset.pageId && e.target.dataset.elementIndex !== undefined && e.target.dataset.itemIndex !== undefined && this.appInstance) {
+                        this.appInstance.removeMultiCheckboxItem?.(
+                            e.target.dataset.pageId,
+                            parseInt(e.target.dataset.elementIndex),
+                            parseInt(e.target.dataset.itemIndex)
+                        );
+                    }
+                    break;
+                case 'add-multi-checkbox-item':
+                    if (e.target.dataset.pageId && e.target.dataset.elementIndex !== undefined && this.appInstance) {
+                        this.appInstance.addMultiCheckboxItem?.(
+                            e.target.dataset.pageId,
+                            parseInt(e.target.dataset.elementIndex)
+                        );
+                    }
+                    break;
+            }
+        });
+        
+        // Handle select change events
+        document.addEventListener('change', (e) => {
+            if (e.target.classList.contains('section-jump') && e.target.dataset.action === 'navigate-section-select') {
+                const projectId = e.target.dataset.projectId;
+                const sectionId = e.target.value;
+                if (projectId && sectionId && this.sectionManager) {
+                    this.sectionManager.navigateToSection(projectId, sectionId);
+                }
+            }
+            // Handle automation ID updates
+            if (e.target.dataset.action === 'update-automation-id') {
+                const projectId = e.target.dataset.projectId;
+                const sectionId = e.target.dataset.sectionId;
+                const value = e.target.value;
+                if (projectId && sectionId && this.appInstance && this.appInstance.updateAutomationId) {
+                    this.appInstance.updateAutomationId(projectId, sectionId, value);
+                }
+            }
+        });
+        
+        // Handle blur events for automation ID validation
+        document.addEventListener('blur', (e) => {
+            if (e.target.dataset.actionBlur === 'validate-automation-id') {
+                const projectId = e.target.dataset.projectId;
+                const sectionId = e.target.dataset.sectionId;
+                const value = e.target.value;
+                if (projectId && sectionId && this.appInstance && this.appInstance.validateAutomationId) {
+                    this.appInstance.validateAutomationId(projectId, sectionId, value);
+                }
+            }
+        }, true);
     }
     
     setupEventListeners() {
@@ -57,9 +188,10 @@ class RenderingEngine {
         const state = this.stateManager.getState();
         const activeProjectId = state.activeProjectId;
         
-        sidebar.innerHTML = '';
+        sidebar.innerHTML = ''; // Clearing - safe
         
         if (state.projects.length === 0) {
+            // Static message - safe
             sidebar.innerHTML = '<p class="empty-message">No projects yet. Create a project to get started!</p>';
             return;
         }
@@ -77,19 +209,14 @@ class RenderingEngine {
         item.dataset.projectId = project.id;
         
         // Calculate completion percentage
-        const totalSections = project.sections.length;
-        const completeSections = project.sections.filter(s => s.status === 'complete').length;
-        const progress = totalSections > 0 ? Math.round((completeSections / totalSections) * 100) : 0;
+        const progress = this.sectionLogic ? this.sectionLogic.calculateProgress(project).percentage : 0;
         
         // Status indicator
-        let statusIcon = '○';
-        if (project.status === 'complete') statusIcon = '●';
-        else if (project.status === 'in_progress') statusIcon = '◐';
+        const statusIcon = this.sectionLogic ? this.sectionLogic.getProjectStatusIcon(project) : '○';
         
         // Get case information
         const caseNumber = project.case || 1;
-        const caseName = this.getCaseDisplayName(caseNumber);
-        const caseBadge = this.renderCaseBadge(caseNumber, project.caseChain);
+        const caseBadge = this.caseInfo ? this.caseInfo.renderCaseBadge(caseNumber, project.caseChain) : `<span class="case-badge case-${caseNumber}">Case ${caseNumber}</span>`;
         
         // Count inference steps for Case 2
         const inferenceStepCount = project.case === 2 ? 
@@ -107,7 +234,8 @@ class RenderingEngine {
             engineBadge = '<span class="engine-badge" title="Multi-Agent Automation">🤖</span>';
         }
         
-        item.innerHTML = `
+        // project.name is user data - escape and use safeSetInnerHTML
+        const itemHtml = `
             <div class="project-item-header">
                 <span class="project-status">${statusIcon}</span>
                 <span class="project-name">${this.escapeHtml(project.name)}</span>
@@ -123,47 +251,49 @@ class RenderingEngine {
         `;
         
         item.addEventListener('click', () => {
-            if (window.app) {
-                window.app.stateManager.setActiveProject(project.id);
-                // Auto-navigate to first incomplete section
-                let firstIncomplete = null;
-                if (typeof window.app.getFirstIncompleteSection === 'function') {
-                    try {
-                        firstIncomplete = window.app.getFirstIncompleteSection(project.id);
-                    } catch (error) {
+            this.stateManager.setActiveProject(project.id);
+            // Auto-navigate to first incomplete section
+            let firstIncomplete = null;
+            if (this.navigation) {
+                try {
+                    firstIncomplete = this.navigation.getFirstIncompleteSection(project.id);
+                } catch (error) {
+                    if (this.errorHandler) {
+                        this.errorHandler.handleError(error, {
+                            source: 'RenderingEngine',
+                            operation: 'renderAll',
+                            projectId: project.id
+                        });
+                    } else {
                         console.warn('Error getting first incomplete section:', error);
                     }
                 }
-                if (firstIncomplete) {
-                    this.activeSectionId = firstIncomplete.id;
-                }
-                this.renderAll();
             }
+            if (firstIncomplete) {
+                this.activeSectionId = firstIncomplete.id || firstIncomplete.sectionId;
+            }
+            this.renderAll();
         });
         
         return item;
     }
     
-    // Render case badge
+    // Render case badge (delegates to CaseInfoService)
     renderCaseBadge(caseNumber, caseChain = null) {
-        const caseName = this.getCaseDisplayName(caseNumber);
-        const caseClass = `case-badge case-${caseNumber}`;
-        const chainIndicator = caseChain ? ` (from Case ${caseChain.previousCase})` : '';
-        return `<span class="${caseClass}" title="${caseName}${chainIndicator}">Case ${caseNumber}</span>`;
+        if (this.caseInfo) {
+            return this.caseInfo.renderCaseBadge(caseNumber, caseChain);
+        }
+        // Fallback if service not available
+        return `<span class="case-badge case-${caseNumber}" title="Case ${caseNumber}">Case ${caseNumber}</span>`;
     }
     
-    // Get case display name
+    // Get case display name (delegates to CaseInfoService)
     getCaseDisplayName(caseNumber) {
-        const caseNames = {
-            1: 'Codebase Analysis',
-            2: 'UI/UX-Only Analysis',
-            3: 'User Input Analysis',
-            4: 'Enhancement',
-            5: 'Iterative Idea Refinement',
-            6: 'Poiesis',
-            7: 'Physis'
-        };
-        return caseNames[caseNumber] || `Case ${caseNumber}`;
+        if (this.caseInfo) {
+            return this.caseInfo.getCaseDisplayName(caseNumber);
+        }
+        // Fallback if service not available
+        return `Case ${caseNumber}`;
     }
     
     // Render section type badge
@@ -201,7 +331,7 @@ class RenderingEngine {
             const isLayering = layeringModifiers.includes(modifier);
             const modifierClass = isLayering ? 'modifier-tag layering' : 'modifier-tag base';
             const removeBtn = editable ? 
-                `<button class="modifier-remove" onclick="app.removeModifier('${projectId}', '${sectionId}', '${modifier}')" title="Remove modifier">×</button>` : '';
+                `<button class="modifier-remove" data-action="remove-modifier" data-project-id="${projectId}" data-section-id="${sectionId}" data-modifier="${modifier}" title="Remove modifier">×</button>` : '';
             
             return `<span class="${modifierClass}" title="${modifier}">
                 ${modifier}
@@ -210,7 +340,7 @@ class RenderingEngine {
         }).join('');
         
         const editBtn = editable ? 
-            `<button class="btn-edit-modifiers" onclick="app.showModifierEditorModal('${projectId}', '${sectionId}')" title="Edit modifiers">✏️ Edit</button>` : '';
+            `<button class="btn-edit-modifiers" data-action="edit-modifiers" data-project-id="${projectId}" data-section-id="${sectionId}" title="Edit modifiers">✏️ Edit</button>` : '';
         
         return `<div class="modifier-tags">
             ${modifierTags}
@@ -235,18 +365,27 @@ class RenderingEngine {
         if (!this.activeSectionId) {
             // Safely get first incomplete section
             let firstIncomplete = null;
-            if (window.app && typeof window.app.getFirstIncompleteSection === 'function') {
+            if (this.navigation) {
                 try {
-                    firstIncomplete = window.app.getFirstIncompleteSection(activeProject.id);
+                    firstIncomplete = this.navigation.getFirstIncompleteSection(activeProject.id);
                 } catch (error) {
-                    console.warn('Error getting first incomplete section:', error);
+                    if (this.errorHandler) {
+                        this.errorHandler.handleError(error, {
+                            source: 'RenderingEngine',
+                            operation: 'renderAll',
+                            projectId: project.id
+                        });
+                    } else {
+                        console.warn('Error getting first incomplete section:', error);
+                    }
                 }
             }
-            this.activeSectionId = firstIncomplete?.id || activeProject.sections[0]?.sectionId;
+            this.activeSectionId = firstIncomplete?.id || firstIncomplete?.sectionId || activeProject.sections[0]?.sectionId;
         }
         
         const section = activeProject.sections.find(s => s.sectionId === this.activeSectionId);
         if (!section) {
+            // Static message - safe
             sectionView.innerHTML = '<div class="section-view-placeholder"><p>No section selected</p></div>';
             return;
         }
@@ -268,7 +407,36 @@ class RenderingEngine {
         const textareaScrollTop = isTextareaFocused ? activeElement.scrollTop : null;
         const textareaSectionId = isTextareaFocused ? activeElement.dataset.sectionId : null;
         
-        sectionView.innerHTML = this.renderSectionContent(activeProject, section);
+        // renderSectionContent is now async, so we need to await it
+        this.renderSectionContent(activeProject, section).then(html => {
+            sectionView.innerHTML = html;
+            
+            // Load process step buttons asynchronously
+            this.loadProcessStepButtons(activeProject, section);
+            
+            // Load input placeholder asynchronously
+            this.loadInputPlaceholder(activeProject, section);
+        }).catch(error => {
+            if (this.errorHandler) {
+                this.errorHandler.handleError(error, {
+                    source: 'RenderingEngine',
+                    operation: 'renderSectionView',
+                    projectId: activeProject.id,
+                    sectionId: section.sectionId
+                });
+                this.errorHandler.showUserNotification(error, {
+                    source: 'RenderingEngine',
+                    operation: 'renderSectionView'
+                }, {
+                    severity: ErrorHandler.Severity.ERROR,
+                    title: 'Rendering Error'
+                });
+            } else {
+                console.error('Error rendering section content:', error);
+            }
+            // Static error message - safe
+            sectionView.innerHTML = '<div class="error">Error rendering section</div>';
+        });
         
         // DIAGNOSTIC: Log rendered automation ID after DOM update (disabled to reduce console noise)
         // Uncomment below for debugging automation ID issues
@@ -332,7 +500,7 @@ class RenderingEngine {
                     // Second attempt - after a short delay
                     setTimeout(() => {
                         restoreTextareaState(newTextarea);
-                    }, 10);
+                    }, AppConstants.TIMEOUTS.TEXTAREA_RESTORE);
                     
                     // Third attempt - after layout
                     requestAnimationFrame(() => {
@@ -354,12 +522,6 @@ class RenderingEngine {
                 }
             }
         });
-        
-        // Load process step buttons asynchronously
-        this.loadProcessStepButtons(activeProject, section);
-        
-        // Load input placeholder asynchronously
-        this.loadInputPlaceholder(activeProject, section);
     }
     
     // Load process step buttons asynchronously
@@ -371,35 +533,48 @@ class RenderingEngine {
         const container = document.querySelector(`.process-step-buttons-container[data-project-id="${project.id}"][data-section-id="${section.sectionId}"]`);
         if (!container) return;
         
-        const pipelineConfig = window.PipelineConfig;
-        if (!pipelineConfig) {
+        if (!this.processSteps) {
             container.innerHTML = '';
             return;
         }
         
         try {
-            const triggers = await pipelineConfig.getProcessStepTriggers(project.case || 1, section.stepName || section.sectionId);
+            const triggers = await this.processSteps.getProcessStepTriggers(project.id, section.sectionId, project, section);
             if (!triggers || triggers.length === 0) {
                 container.innerHTML = '';
                 return;
             }
             
-            const buttons = triggers.map(trigger => {
-                const buttonClass = trigger.required ? 'btn-process-step required' : 'btn-process-step';
-                const buttonText = trigger.name.replace('-loop', '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                return `<button class="${buttonClass}" onclick="app.invokeProcessStep('${project.id}', '${section.sectionId}', '${trigger.name}')" title="${trigger.required ? 'Required' : 'Optional'} process step">
-                    ⚙️ ${buttonText}
-                </button>`;
-            }).join('');
+            // renderProcessStepButtons returns trusted HTML template
+            const buttonsHtml = this.processSteps.renderProcessStepButtons(triggers, project.id, section.sectionId);
+            if (window.safeSetInnerHTML) {
+                window.safeSetInnerHTML(container, buttonsHtml, { trusted: true });
+            } else {
+                container.innerHTML = buttonsHtml;
+            }
             
-            container.innerHTML = `<div class="process-step-buttons">
-                <h4>Process Steps</h4>
-                <div class="process-step-actions">
-                    ${buttons}
-                </div>
-            </div>`;
+            // Attach event listeners for process step buttons
+            container.querySelectorAll('[data-action="invoke-process-step"]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const projectId = btn.dataset.projectId;
+                    const sectionId = btn.dataset.sectionId;
+                    const processStep = btn.dataset.processStep;
+                    if (projectId && sectionId && processStep && this.sectionManager) {
+                        this.sectionManager.invokeProcessStep(projectId, sectionId, processStep);
+                    }
+                });
+            });
         } catch (error) {
-            console.error('Error loading process step buttons:', error);
+            if (this.errorHandler) {
+                this.errorHandler.handleError(error, {
+                    source: 'RenderingEngine',
+                    operation: 'loadProcessStepButtons',
+                    projectId: project.id,
+                    sectionId: section.sectionId
+                });
+            } else {
+                console.error('Error loading process step buttons:', error);
+            }
             container.innerHTML = '';
         }
     }
@@ -409,27 +584,42 @@ class RenderingEngine {
         const textarea = document.querySelector(`.section-input[data-project-id="${project.id}"][data-section-id="${section.sectionId}"]`);
         if (!textarea) return;
         
+        if (!this.placeholder) {
+            textarea.placeholder = 'Enter input for this section...';
+            return;
+        }
+        
         try {
-            const placeholder = await this.getInputPlaceholder(section, project);
+            const placeholder = this.placeholder ? await this.placeholder.getInputPlaceholder(section, project) : 'Enter input for this section...';
             if (placeholder) {
                 textarea.placeholder = placeholder;
             }
         } catch (error) {
-            console.warn('Failed to load input placeholder:', error);
+            if (this.errorHandler) {
+                this.errorHandler.handleError(error, {
+                    source: 'RenderingEngine',
+                    operation: 'loadInputPlaceholder',
+                    projectId: project.id,
+                    sectionId: section.sectionId
+                });
+            } else {
+                console.warn('Failed to load input placeholder:', error);
+            }
             textarea.placeholder = 'Enter input for this section...';
         }
     }
     
-    // Render section content
-    renderSectionContent(project, section) {
-        const config = window.PipelineConfig;
-        const sectionDef = config?.getSection(section.sectionId);
-        
+    /**
+     * Prepare data for section content rendering
+     * @private
+     * @returns {Object} Object with all data needed for rendering
+     */
+    async _prepareSectionContentData(project, section) {
         // Check dependencies
         let deps = { met: true, missing: [] };
-        if (window.app && typeof window.app.checkDependencies === 'function') {
+        if (this.sectionLogic) {
             try {
-                deps = window.app.checkDependencies(project.id, section.sectionId) || { met: true, missing: [] };
+                deps = this.sectionLogic.checkDependencies(project.id, section.sectionId) || { met: true, missing: [] };
             } catch (error) {
                 console.warn('Error checking dependencies:', error);
             }
@@ -437,173 +627,235 @@ class RenderingEngine {
         const isLocked = !deps.met;
         
         // Status indicator
-        let statusClass = 'status-not-started';
-        let statusText = 'Not Started';
-        if (section.status === 'complete') {
-            statusClass = 'status-complete';
-            statusText = 'Complete';
-        } else if (section.status === 'in_progress') {
-            statusClass = 'status-in-progress';
-            statusText = 'In Progress';
-        } else if (section.status === 'needs_revision') {
-            statusClass = 'status-needs-revision';
-            statusText = 'Needs Revision';
-        }
+        const statusInfo = this.sectionLogic ? this.sectionLogic.determineStatus(section) : { class: 'status-not-started', text: 'Not Started', icon: '○' };
+        const statusClass = statusInfo.class;
+        const statusText = statusInfo.text;
         
         // Navigation
-        const prevSection = config?.getPreviousSection(section.sectionId, project.sections);
-        const nextSection = config?.getNextSection(section.sectionId, project.sections);
+        const prevSection = this.navigation ? this.navigation.getPreviousSection(project.id, section.sectionId) : null;
+        const nextSection = this.navigation ? await this.navigation.getNextSection(project.id, section.sectionId) : null;
         
         // Get case information
         const caseNumber = project.case || 1;
         const caseBadge = this.renderCaseBadge(caseNumber, project.caseChain);
-        const caseChainInfo = project.caseChain ? 
-            `<span class="case-chain-info" title="Enhanced from Case ${project.caseChain.previousCase}">🔗 Enhanced from Case ${project.caseChain.previousCase}</span>` : '';
+        const caseChainInfo = this.caseInfo ? this.caseInfo.getCaseChainInfo(project.caseChain) : '';
         
         // Get workflow context (step position)
-        const currentIndex = project.sections.findIndex(s => s.sectionId === section.sectionId);
-        const totalSteps = project.sections.length;
-        const workflowContext = `Step ${currentIndex + 1} of ${totalSteps}`;
+        const workflowInfo = this.workflowContext ? this.workflowContext.getWorkflowContext(project.id, section.sectionId) : { contextString: '' };
+        const workflowContext = workflowInfo.contextString;
         
         // Get section type badge
         const sectionTypeBadge = this.renderSectionTypeBadge(section);
         
+        return {
+            deps,
+            isLocked,
+            statusClass,
+            statusText,
+            prevSection,
+            nextSection,
+            caseBadge,
+            caseChainInfo,
+            workflowContext,
+            sectionTypeBadge
+        };
+    }
+    
+    /**
+     * Render section header HTML
+     * @private
+     * @returns {string} HTML string for section header
+     */
+    _renderSectionHeader(data, project, section) {
+        return `
+            <div class="section-case-header">
+                ${data.caseBadge}
+                ${data.caseChainInfo}
+                <span class="workflow-context">${data.workflowContext}</span>
+                ${data.sectionTypeBadge}
+            </div>
+            <div class="section-header">
+                <div class="section-title-row">
+                    <h2 class="section-title">${this.escapeHtml(section.sectionName)}</h2>
+                    <span class="section-status ${data.statusClass}">${data.statusText}</span>
+                </div>
+                <div class="section-automation-id-row">
+                    <label for="automation-id-${section.sectionId}" style="font-size: 12px; color: #b8b8b8; margin-right: 8px;">Automation ID:</label>
+                    <input 
+                        type="text" 
+                        id="automation-id-${section.sectionId}" 
+                        name="automation-id-${section.sectionId}"
+                        class="automation-id-input" 
+                        data-project-id="${project.id}" 
+                        data-section-id="${section.sectionId}"
+                        value="${this.escapeHtml(section.automationId || '')}" 
+                        placeholder="auto"
+                        maxlength="20"
+                        style="padding: 4px 8px; border: 1px solid #404040; background: #1a1a1a; color: #e0e0e0; border-radius: 4px; font-size: 12px; width: 100px;"
+                        data-action="update-automation-id" data-project-id="${project.id}" data-section-id="${section.sectionId}"
+                        data-action-blur="validate-automation-id" data-project-id="${project.id}" data-section-id="${section.sectionId}"
+                    />
+                    <span class="automation-id-status" id="automation-id-status-${section.sectionId}" style="margin-left: 8px; font-size: 11px;"></span>
+                </div>
+                <div class="section-navigation">
+                    <button class="btn-nav" ${!data.prevSection ? 'disabled' : ''} onclick="app.navigateToSection('${project.id}', '${data.prevSection?.sectionId || ''}')">← Previous</button>
+                    <select class="section-jump" data-action="navigate-section-select" data-project-id="${project.id}">
+                        ${project.sections.map(s => 
+                            `<option value="${s.sectionId}" ${s.sectionId === section.sectionId ? 'selected' : ''}>${s.sectionName}</option>`
+                        ).join('')}
+                    </select>
+                    <button class="btn-nav" ${!data.nextSection ? 'disabled' : ''} data-action="navigate-section" data-project-id="${project.id}" data-section-id="${data.nextSection?.sectionId || ''}">Next →</button>
+                </div>
+            </div>
+        `;
+    }
+    
+    /**
+     * Render section locked message
+     * @private
+     * @returns {string} HTML string for locked message or empty string
+     */
+    _renderSectionLockedMessage(data, project) {
+        if (!data.isLocked) return '';
+        
+        return `
+            <div class="section-locked">
+                <p>⚠️ This section is locked. Complete the following sections first:</p>
+                <ul>
+                    ${data.deps.missing.map(depId => {
+                        const depSection = project.sections.find(s => s.sectionId === depId);
+                        return `<li>${depSection?.sectionName || depId}</li>`;
+                    }).join('')}
+                </ul>
+            </div>
+        `;
+    }
+    
+    /**
+     * Render inference step indicator
+     * @private
+     * @returns {string} HTML string for inference indicator or empty string
+     */
+    _renderInferenceStepIndicator(section) {
+        if (!section.isInferenceStep) return '';
+        
+        return `
+            <div class="inference-step-indicator">
+                <span class="inference-badge">🔍 Inference Step</span>
+                <p>This is an inference step that generates implementation details from UX specifications.</p>
+            </div>
+        `;
+    }
+    
+    /**
+     * Render modifiers section
+     * @private
+     * @returns {string} HTML string for modifiers section
+     */
+    _renderModifiersSection(section, project) {
+        return `
+            <div class="section-modifiers ${(!section.modifiers || section.modifiers.length === 0) ? 'collapsed' : ''}" 
+                 data-project-id="${project.id}" 
+                 data-section-id="${section.sectionId}">
+                <h4>Active Modifiers</h4>
+                <div class="modifier-content">
+                    ${this.renderModifierTags(section.modifiers || [], project.id, section.sectionId, true)}
+                </div>
+            </div>
+            <div class="process-step-buttons-container" data-project-id="${project.id}" data-section-id="${section.sectionId}">
+                <!-- Process step buttons will be loaded asynchronously -->
+            </div>
+        `;
+    }
+    
+    /**
+     * Render section panels (prompt, input, output, notes)
+     * @private
+     * @returns {string} HTML string for section panels
+     */
+    _renderSectionPanels(project, section) {
+        return `
+            <div class="section-panels">
+                <div class="section-panel prompt-panel" data-project-id="${project.id}" data-section-id="${section.sectionId}">
+                    <div class="panel-header">
+                        <h3>Prompt Template</h3>
+                        <button class="btn-collapse" onclick="this.parentElement.nextElementSibling.classList.toggle('collapsed'); this.textContent = this.parentElement.nextElementSibling.classList.contains('collapsed') ? '▶' : '▼';">▼</button>
+                    </div>
+                    <div class="panel-content">
+                        <pre class="prompt-text">${this.escapeHtml(section.prompt || 'Loading prompt...')}</pre>
+                        <button class="btn-copy" data-action="copy-prompt-input" data-project-id="${project.id}" data-section-id="${section.sectionId}">Copy Prompt + Input</button>
+                    </div>
+                </div>
+                
+                ${(section.modifiers || []).includes('override-instructions') ? `
+                <div class="section-panel override-instructions-panel" data-project-id="${project.id}" data-section-id="${section.sectionId}">
+                    <div class="panel-header">
+                        <h3>Override Instructions</h3>
+                        <button class="btn-collapse" onclick="this.parentElement.nextElementSibling.classList.toggle('collapsed'); this.textContent = this.parentElement.nextElementSibling.classList.contains('collapsed') ? '▶' : '▼';">▼</button>
+                    </div>
+                    <div class="panel-content">
+                        <textarea class="section-override-instructions" data-project-id="${project.id}" data-section-id="${section.sectionId}" placeholder="Enter override instructions that will be included in the copied prompt...">${this.escapeHtml(section.overrideInstructions || '')}</textarea>
+                    </div>
+                </div>
+                ` : ''}
+                
+                <div class="section-panel input-panel" data-project-id="${project.id}" data-section-id="${section.sectionId}">
+                    <div class="panel-header">
+                        <h3>Input</h3>
+                        <div class="panel-actions" style="display: flex; gap: 8px; align-items: center;">
+                            <button class="btn-input-guidance" data-project-id="${project.id}" data-section-id="${section.sectionId}" title="Input Guidance" style="background: transparent; border: 1px solid #404040; border-radius: 4px; color: #888; cursor: pointer; padding: 4px 8px; font-size: 14px; font-weight: bold; transition: all 0.2s;" onmouseover="this.style.borderColor='#4a9eff'; this.style.color='#4a9eff';" onmouseout="this.style.borderColor='#404040'; this.style.color='#888';">?</button>
+                            <button class="btn-paste" data-action="paste-previous" data-project-id="${project.id}" data-section-id="${section.sectionId}">Paste from Previous</button>
+                            <button class="btn-collapse" onclick="this.closest('.panel-header').nextElementSibling.classList.toggle('collapsed'); this.textContent = this.closest('.panel-header').nextElementSibling.classList.contains('collapsed') ? '▶' : '▼';">▼</button>
+                        </div>
+                    </div>
+                    <div class="panel-content">
+                        <textarea id="section-input-${project.id}-${section.sectionId}" name="section-input-${project.id}-${section.sectionId}" class="section-input" data-project-id="${project.id}" data-section-id="${section.sectionId}" placeholder="Loading placeholder...">${this.escapeHtml(section.input)}</textarea>
+                    </div>
+                </div>
+                
+                <div class="section-panel output-panel" data-project-id="${project.id}" data-section-id="${section.sectionId}">
+                    <div class="panel-header">
+                        <h3>Output</h3>
+                        <div class="panel-actions" style="display: flex; gap: 8px; align-items: center;">
+                            <button class="btn-collapse" onclick="this.closest('.panel-header').nextElementSibling.classList.toggle('collapsed'); this.textContent = this.closest('.panel-header').nextElementSibling.classList.contains('collapsed') ? '▶' : '▼';">▼</button>
+                            <button class="btn-complete" onclick="app.markSectionComplete('${project.id}', '${section.sectionId}')">Mark Complete</button>
+                            <button class="btn-revision" onclick="app.markSectionNeedsRevision('${project.id}', '${section.sectionId}')">Needs Revision</button>
+                        </div>
+                    </div>
+                    <div class="panel-content">
+                        <textarea class="section-output" data-project-id="${project.id}" data-section-id="${section.sectionId}" placeholder="Paste LLM output here...">${this.escapeHtml(section.output)}</textarea>
+                    </div>
+                </div>
+                
+                <div class="section-panel notes-panel" data-project-id="${project.id}" data-section-id="${section.sectionId}">
+                    <div class="panel-header">
+                        <h3>Notes & Refinements</h3>
+                        <button class="btn-collapse" onclick="this.parentElement.nextElementSibling.classList.toggle('collapsed'); this.textContent = this.parentElement.nextElementSibling.classList.contains('collapsed') ? '▶' : '▼';">▼</button>
+                    </div>
+                    <div class="panel-content">
+                        <textarea class="section-notes" data-project-id="${project.id}" data-section-id="${section.sectionId}" placeholder="Add notes or refinements...">${this.escapeHtml(section.notes)}</textarea>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Render section content
+    async renderSectionContent(project, section) {
+        const config = window.PipelineConfig;
+        const sectionDef = config?.getSection(section.sectionId);
+        
+        // Prepare all data needed for rendering
+        const data = await this._prepareSectionContentData(project, section);
+        
+        // Build HTML from template sections
         return `
             <div class="section-view-content">
-                <div class="section-case-header">
-                    ${caseBadge}
-                    ${caseChainInfo}
-                    <span class="workflow-context">${workflowContext}</span>
-                    ${sectionTypeBadge}
-                </div>
-                <div class="section-header">
-                    <div class="section-title-row">
-                        <h2 class="section-title">${this.escapeHtml(section.sectionName)}</h2>
-                        <span class="section-status ${statusClass}">${statusText}</span>
-                    </div>
-                    <div class="section-automation-id-row">
-                        <label for="automation-id-${section.sectionId}" style="font-size: 12px; color: #b8b8b8; margin-right: 8px;">Automation ID:</label>
-                        <input 
-                            type="text" 
-                            id="automation-id-${section.sectionId}" 
-                            name="automation-id-${section.sectionId}"
-                            class="automation-id-input" 
-                            data-project-id="${project.id}" 
-                            data-section-id="${section.sectionId}"
-                            value="${this.escapeHtml(section.automationId || '')}" 
-                            placeholder="auto"
-                            maxlength="20"
-                            style="padding: 4px 8px; border: 1px solid #404040; background: #1a1a1a; color: #e0e0e0; border-radius: 4px; font-size: 12px; width: 100px;"
-                            onchange="app.updateAutomationId('${project.id}', '${section.sectionId}', this.value)"
-                            onblur="app.validateAutomationId('${project.id}', '${section.sectionId}', this.value)"
-                        />
-                        <span class="automation-id-status" id="automation-id-status-${section.sectionId}" style="margin-left: 8px; font-size: 11px;"></span>
-                    </div>
-                    <div class="section-navigation">
-                        <button class="btn-nav" ${!prevSection ? 'disabled' : ''} onclick="app.navigateToSection('${project.id}', '${prevSection?.sectionId || ''}')">← Previous</button>
-                        <select class="section-jump" onchange="app.navigateToSection('${project.id}', this.value)">
-                            ${project.sections.map(s => 
-                                `<option value="${s.sectionId}" ${s.sectionId === section.sectionId ? 'selected' : ''}>${s.sectionName}</option>`
-                            ).join('')}
-                        </select>
-                        <button class="btn-nav" ${!nextSection ? 'disabled' : ''} onclick="app.navigateToSection('${project.id}', '${nextSection?.sectionId || ''}')">Next →</button>
-                    </div>
-                </div>
-                
-                ${isLocked ? `
-                    <div class="section-locked">
-                        <p>⚠️ This section is locked. Complete the following sections first:</p>
-                        <ul>
-                            ${deps.missing.map(depId => {
-                                const depSection = project.sections.find(s => s.sectionId === depId);
-                                return `<li>${depSection?.sectionName || depId}</li>`;
-                            }).join('')}
-                        </ul>
-                    </div>
-                ` : ''}
-                
-                ${section.isInferenceStep ? `
-                    <div class="inference-step-indicator">
-                        <span class="inference-badge">🔍 Inference Step</span>
-                        <p>This is an inference step that generates implementation details from UX specifications.</p>
-                    </div>
-                ` : ''}
-                
-                <div class="section-modifiers ${(!section.modifiers || section.modifiers.length === 0) ? 'collapsed' : ''}" 
-                     data-project-id="${project.id}" 
-                     data-section-id="${section.sectionId}">
-                    <h4>Active Modifiers</h4>
-                    <div class="modifier-content">
-                        ${this.renderModifierTags(section.modifiers || [], project.id, section.sectionId, true)}
-                    </div>
-                </div>
-                
-                <div class="process-step-buttons-container" data-project-id="${project.id}" data-section-id="${section.sectionId}">
-                    <!-- Process step buttons will be loaded asynchronously -->
-                </div>
-                
-                <div class="section-panels">
-                    <div class="section-panel prompt-panel" data-project-id="${project.id}" data-section-id="${section.sectionId}">
-                        <div class="panel-header">
-                            <h3>Prompt Template</h3>
-                            <button class="btn-collapse" onclick="this.parentElement.nextElementSibling.classList.toggle('collapsed'); this.textContent = this.parentElement.nextElementSibling.classList.contains('collapsed') ? '▶' : '▼';">▼</button>
-                        </div>
-                        <div class="panel-content">
-                            <pre class="prompt-text">${this.escapeHtml(section.prompt || 'Loading prompt...')}</pre>
-                            <button class="btn-copy" onclick="app.copyPromptWithInput('${project.id}', '${section.sectionId}')">Copy Prompt + Input</button>
-                        </div>
-                    </div>
-                    
-                    ${(section.modifiers || []).includes('override-instructions') ? `
-                    <div class="section-panel override-instructions-panel" data-project-id="${project.id}" data-section-id="${section.sectionId}">
-                        <div class="panel-header">
-                            <h3>Override Instructions</h3>
-                            <button class="btn-collapse" onclick="this.parentElement.nextElementSibling.classList.toggle('collapsed'); this.textContent = this.parentElement.nextElementSibling.classList.contains('collapsed') ? '▶' : '▼';">▼</button>
-                        </div>
-                        <div class="panel-content">
-                            <textarea class="section-override-instructions" data-project-id="${project.id}" data-section-id="${section.sectionId}" placeholder="Enter override instructions that will be included in the copied prompt...">${this.escapeHtml(section.overrideInstructions || '')}</textarea>
-                        </div>
-                    </div>
-                    ` : ''}
-                    
-                    <div class="section-panel input-panel" data-project-id="${project.id}" data-section-id="${section.sectionId}">
-                        <div class="panel-header">
-                            <h3>Input</h3>
-                            <div class="panel-actions" style="display: flex; gap: 8px; align-items: center;">
-                                <button class="btn-input-guidance" data-project-id="${project.id}" data-section-id="${section.sectionId}" title="Input Guidance" style="background: transparent; border: 1px solid #404040; border-radius: 4px; color: #888; cursor: pointer; padding: 4px 8px; font-size: 14px; font-weight: bold; transition: all 0.2s;" onmouseover="this.style.borderColor='#4a9eff'; this.style.color='#4a9eff';" onmouseout="this.style.borderColor='#404040'; this.style.color='#888';">?</button>
-                                <button class="btn-paste" onclick="app.pasteFromPreviousSection('${project.id}', '${section.sectionId}')">Paste from Previous</button>
-                                <button class="btn-collapse" onclick="this.closest('.panel-header').nextElementSibling.classList.toggle('collapsed'); this.textContent = this.closest('.panel-header').nextElementSibling.classList.contains('collapsed') ? '▶' : '▼';">▼</button>
-                            </div>
-                        </div>
-                        <div class="panel-content">
-                            <textarea id="section-input-${project.id}-${section.sectionId}" name="section-input-${project.id}-${section.sectionId}" class="section-input" data-project-id="${project.id}" data-section-id="${section.sectionId}" placeholder="Loading placeholder...">${this.escapeHtml(section.input)}</textarea>
-                        </div>
-                    </div>
-                    
-                    <div class="section-panel output-panel" data-project-id="${project.id}" data-section-id="${section.sectionId}">
-                        <div class="panel-header">
-                            <h3>Output</h3>
-                            <div class="panel-actions" style="display: flex; gap: 8px; align-items: center;">
-                                <button class="btn-collapse" onclick="this.closest('.panel-header').nextElementSibling.classList.toggle('collapsed'); this.textContent = this.closest('.panel-header').nextElementSibling.classList.contains('collapsed') ? '▶' : '▼';">▼</button>
-                                <button class="btn-complete" onclick="app.markSectionComplete('${project.id}', '${section.sectionId}')">Mark Complete</button>
-                                <button class="btn-revision" onclick="app.markSectionNeedsRevision('${project.id}', '${section.sectionId}')">Needs Revision</button>
-                            </div>
-                        </div>
-                        <div class="panel-content">
-                            <textarea class="section-output" data-project-id="${project.id}" data-section-id="${section.sectionId}" placeholder="Paste LLM output here...">${this.escapeHtml(section.output)}</textarea>
-                        </div>
-                    </div>
-                    
-                    <div class="section-panel notes-panel" data-project-id="${project.id}" data-section-id="${section.sectionId}">
-                        <div class="panel-header">
-                            <h3>Notes & Refinements</h3>
-                            <button class="btn-collapse" onclick="this.parentElement.nextElementSibling.classList.toggle('collapsed'); this.textContent = this.parentElement.nextElementSibling.classList.contains('collapsed') ? '▶' : '▼';">▼</button>
-                        </div>
-                        <div class="panel-content">
-                            <textarea class="section-notes" data-project-id="${project.id}" data-section-id="${section.sectionId}" placeholder="Add notes or refinements...">${this.escapeHtml(section.notes)}</textarea>
-                        </div>
-                    </div>
-                </div>
+                ${this._renderSectionHeader(data, project, section)}
+                ${this._renderSectionLockedMessage(data, project)}
+                ${this._renderInferenceStepIndicator(section)}
+                ${this._renderModifiersSection(section, project)}
+                ${this._renderSectionPanels(project, section)}
             </div>
         `;
     }
@@ -617,6 +869,7 @@ class RenderingEngine {
         const activeProject = this.stateManager.getActiveProject();
         
         if (!activeProject) {
+            // Static message - safe
             flowView.innerHTML = '<div class="pipeline-flow-placeholder"><p>Select a project to view pipeline</p></div>';
             return;
         }
@@ -721,9 +974,9 @@ class RenderingEngine {
         // Render all sections from the project (includes inference steps for Case 2)
         activeProject.sections.forEach((section, index) => {
             let deps = { met: true };
-            if (window.app && typeof window.app.checkDependencies === 'function') {
+            if (this.sectionLogic) {
                 try {
-                    deps = window.app.checkDependencies(activeProject.id, section.sectionId) || { met: true };
+                    deps = this.sectionLogic.checkDependencies(activeProject.id, section.sectionId) || { met: true };
                 } catch (error) {
                     console.warn('Error checking dependencies:', error);
                 }
@@ -753,8 +1006,8 @@ class RenderingEngine {
             let qualityScoreBadge = '';
             if (activeProject.automationEngine === 'multi-agent' && section.status === 'complete') {
                 // Try to get quality score from multi-agent system if available
-                if (window.app && window.app.multiAgentAutomation && window.app.multiAgentAutomation.qualityScores) {
-                    const qualityScore = window.app.multiAgentAutomation.qualityScores.get(section.sectionId);
+                if (this.multiAgentAutomation && this.multiAgentAutomation.qualityScores) {
+                    const qualityScore = this.multiAgentAutomation.qualityScores.get(section.sectionId);
                     if (qualityScore && typeof qualityScore.score === 'number') {
                         const scorePercent = (qualityScore.score * 100).toFixed(0);
                         const scoreColor = qualityScore.score >= 0.9 ? '#4caf50' : 
@@ -769,7 +1022,7 @@ class RenderingEngine {
                 <div class="pipeline-section-item ${lockedClass} ${activeClass} ${sectionTypeClass}" 
                      data-project-id="${activeProject.id}" 
                      data-section-id="${section.sectionId}" 
-                     onclick="app.navigateToSection('${activeProject.id}', '${section.sectionId}')">
+                     data-action="navigate-section" data-project-id="${activeProject.id}" data-section-id="${section.sectionId}">
                     <div class="section-item-header">
                         <span class="section-icon">${isLocked ? '🔒' : statusIcon}</span>
                         <span class="section-name">${this.escapeHtml(section.sectionName)}</span>
@@ -778,7 +1031,7 @@ class RenderingEngine {
                     <div class="section-item-meta">
                         ${modifierBadges}
                         ${qualityScoreBadge}
-                        ${activeProject.automationEngine === 'multi-agent' && window.app && window.app.multiAgentAutomation && window.app.multiAgentAutomation.agentDiscussions ? this.renderAgentDiscussionIndicator(activeProject.id, section.sectionId) : ''}
+                        ${activeProject.automationEngine === 'multi-agent' && this.multiAgentAutomation && this.multiAgentAutomation.agentDiscussions ? this.renderAgentDiscussionIndicator(activeProject.id, section.sectionId) : ''}
                         <span class="section-status">${section.status === 'complete' ? '✓' : section.status === 'in_progress' ? '⏳' : section.status === 'needs_revision' ? '⚠' : ''}</span>
                     </div>
                 </div>
@@ -788,7 +1041,12 @@ class RenderingEngine {
         html += '</div>';
         html += '</div>';
         
-        flowView.innerHTML = html;
+        // html contains user data (section names, project data) - sanitize
+        if (window.safeSetInnerHTML) {
+            window.safeSetInnerHTML(flowView, html, { allowMarkdown: false });
+        } else {
+            flowView.innerHTML = html;
+        }
         
         // Ensure only one item has the active class (safety check)
         const allItems = flowView.querySelectorAll('.pipeline-section-item');
@@ -810,7 +1068,14 @@ class RenderingEngine {
             this.container = document.getElementById('pages-container');
         }
         if (!this.container) {
-            console.warn('pages-container not found, skipping render');
+            if (this.errorHandler) {
+                this.errorHandler.handleError('pages-container not found', {
+                    source: 'RenderingEngine',
+                    operation: 'renderLegacyPages'
+                });
+            } else {
+                console.warn('pages-container not found, skipping render');
+            }
             return;
         }
         
@@ -847,13 +1112,19 @@ class RenderingEngine {
         const pageContentId = `page-content-${page.id}`;
         
         const arrow = isExpanded ? '▼' : '▶';
-        header.innerHTML = `
+        // page.title is user data - escape and use safeSetInnerHTML
+        const headerHtml = `
             <span class="page-toggle-arrow" id="${pageToggleId}" style="cursor: pointer; margin-right: 8px; color: #888888; user-select: none;">${arrow}</span>
             <div class="page-title" data-page-id="${page.id}">${this.escapeHtml(page.title)}</div>
             <div class="page-controls">
-                <button onclick="app.deletePage('${page.id}')">Delete</button>
+                <button data-action="delete-page" data-page-id="${page.id}">Delete</button>
             </div>
         `;
+        if (window.safeSetInnerHTML) {
+            window.safeSetInnerHTML(header, headerHtml, { trusted: false });
+        } else {
+            header.innerHTML = headerHtml;
+        }
         
         // Page content
         const pageContent = document.createElement('div');
@@ -875,8 +1146,8 @@ class RenderingEngine {
         addElementBtn.className = 'add-element-btn';
         addElementBtn.textContent = '+ Add Element';
         addElementBtn.onclick = () => {
-            if (window.app) {
-                window.app.showAddElementModal(page.id);
+            if (this.uiManager) {
+                this.uiManager.showAddElementModal(page.id);
             }
         };
         
@@ -988,7 +1259,14 @@ class RenderingEngine {
                 this.renderTaskElement(div, pageId, element, elementIndex, tooltipText);
                 break;
             case 'header':
-                div.innerHTML = `<div class="header-text">${this.escapeHtml(element.text)}</div>`;
+                // element.text is user data - escape and use safeSetInnerHTML
+                // element.text is user data - escape and use safeSetInnerHTML
+                const headerHtml2 = `<div class="header-text">${this.escapeHtml(element.text)}</div>`;
+                if (window.safeSetInnerHTML) {
+                    window.safeSetInnerHTML(div, headerHtml2, { trusted: false });
+                } else {
+                    div.innerHTML = headerHtml2;
+                }
                 this.addTooltip(div, tooltipText);
                 break;
             case 'header-checkbox':
@@ -1157,19 +1435,25 @@ class RenderingEngine {
             return `
                 <div class="multi-checkbox-row" data-item-index="${itemIndex}">
                     <input type="checkbox" id="multi-checkbox-${pageId}-${elementIndex}-${itemIndex}" name="multi-checkbox-${pageId}-${elementIndex}-${itemIndex}" ${item.completed ? 'checked' : ''} 
-                           onchange="app.toggleMultiCheckboxItem('${pageId}', ${elementIndex}, ${itemIndex})">
+                           data-action="toggle-multi-checkbox-item" data-page-id="${pageId}" data-element-index="${elementIndex}" data-item-index="${itemIndex}">
                     <span class="checkbox-label">${this.escapeHtml(item.text)}</span>
-                    ${element.items.length > 1 ? `<button onclick="app.removeMultiCheckboxItem('${pageId}', ${elementIndex}, ${itemIndex})" style="padding: 2px 6px; font-size: 11px; background: #e74c3c;">×</button>` : ''}
+                    ${element.items.length > 1 ? `<button data-action="remove-multi-checkbox-item" data-page-id="${pageId}" data-element-index="${elementIndex}" data-item-index="${itemIndex}" style="padding: 2px 6px; font-size: 11px; background: #e74c3c;">×</button>` : ''}
                 </div>
             `;
         }).join('');
         
-        div.innerHTML = `
+        // Contains user data - sanitize
+        const elementHtml = `
             ${itemsHtml}
             <div class="multi-checkbox-controls">
-                <button onclick="app.addMultiCheckboxItem('${pageId}', ${elementIndex})">+ Add</button>
+                <button data-action="add-multi-checkbox-item" data-page-id="${pageId}" data-element-index="${elementIndex}">+ Add</button>
             </div>
         `;
+        if (window.safeSetInnerHTML) {
+            window.safeSetInnerHTML(div, elementHtml, { trusted: false });
+        } else {
+            div.innerHTML = elementHtml;
+        }
         
         // Add click handlers to checkboxes to stop propagation
         div.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
@@ -1216,9 +1500,11 @@ class RenderingEngine {
             e.preventDefault();
             e.stopPropagation();
             
-            // Open edit modal via app instance
-            if (window.app && typeof window.app.showEditModal === 'function') {
-                window.app.showEditModal(pageId, elementIndex);
+            // Open edit modal via UI manager or app instance
+            if (this.uiManager) {
+                this.uiManager.showEditModal(pageId, elementIndex);
+            } else if (this.appInstance && this.appInstance.showEditModal) {
+                this.appInstance.showEditModal(pageId, elementIndex);
             }
         });
     }
@@ -1241,7 +1527,7 @@ class RenderingEngine {
         const tooltip = document.createElement('div');
         tooltip.id = 'tooltip';
         tooltip.textContent = text;
-        tooltip.style.cssText = 'position: absolute; background: #333; color: #fff; padding: 5px 10px; border-radius: 4px; z-index: 10000; pointer-events: none;';
+        tooltip.style.cssText = `position: absolute; background: #333; color: #fff; padding: 5px 10px; border-radius: 4px; z-index: ${AppConstants.UI.Z_INDEX.TOOLTIP}; pointer-events: none;`;
         document.body.appendChild(tooltip);
     }
     
@@ -1268,53 +1554,23 @@ class RenderingEngine {
     }
     
     // Get contextual placeholder text for input field based on step type
+    // getInputPlaceholder is now handled by PlaceholderService
+    // This method is kept for backward compatibility but delegates to service
     async getInputPlaceholder(section, project) {
-        const stepName = section.stepName || section.sectionId;
-        
-        // Try to load input guidance from the step file
-        if (window.PromptLoader) {
-            try {
-                const guidance = await window.PromptLoader.getInputGuidance(
-                    stepName,
-                    section.isProcessStep,
-                    section.isInferenceStep,
-                    section.processStepType
-                );
-                
-                if (guidance) {
-                    // Extract the first meaningful line for placeholder (usually the bullet point)
-                    const lines = guidance.split('\n').filter(line => line.trim());
-                    for (const line of lines) {
-                        // Look for bullet points or bold text
-                        const cleanLine = line.replace(/^[-*•]\s*/, '').replace(/\*\*/g, '').trim();
-                        if (cleanLine && cleanLine.length < 100) {
-                            // Use first reasonable line, but truncate if too long
-                            return cleanLine.length > 80 ? cleanLine.substring(0, 77) + '...' : cleanLine;
-                        }
-                    }
-                    // If no good line found, use first line truncated
-                    if (lines.length > 0) {
-                        const firstLine = lines[0].replace(/^[-*•]\s*/, '').replace(/\*\*/g, '').trim();
-                        return firstLine.length > 80 ? firstLine.substring(0, 77) + '...' : firstLine;
-                    }
-                }
-            } catch (error) {
-                console.warn('Failed to load input guidance:', error);
-            }
+        if (this.placeholder) {
+            return await this.placeholder.getInputPlaceholder(section, project);
         }
-        
-        // Fallback to generic placeholder
         return 'Enter input for this section...';
     }
     
     // Render agent discussion indicator for multi-agent projects
     renderAgentDiscussionIndicator(projectId, sectionId) {
-        if (!window.app || !window.app.multiAgentAutomation) {
+        if (!this.multiAgentAutomation) {
             return '';
         }
         
         const discussionId = `discussion-${sectionId}`;
-        const discussion = window.app.multiAgentAutomation.agentDiscussions.get(discussionId);
+        const discussion = this.multiAgentAutomation.agentDiscussions.get(discussionId);
         
         if (!discussion || discussion.length === 0) {
             return '';

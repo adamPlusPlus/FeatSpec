@@ -7,9 +7,10 @@ import { ChatContextBuilder } from './ChatContextBuilder.js';
  * ChatMessageHandler - Handles sending messages to Cursor CLI and managing conversation flow
  */
 export class ChatMessageHandler {
-    constructor(contextBuilder, eventSystem) {
+    constructor(contextBuilder, eventSystem, errorHandler = null) {
         this.contextBuilder = contextBuilder;
         this.eventSystem = eventSystem;
+        this.errorHandler = errorHandler;
     }
     
     /**
@@ -44,31 +45,62 @@ export class ChatMessageHandler {
             data: { chatId, message: userMessage }
         });
 
-        try {
-            // Call Cursor CLI API
-            const response = await fetch('/api/cursor-cli-execute', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
+        // Use ErrorHandler with retry logic if available
+        if (this.errorHandler) {
+            const result = await this.errorHandler.handleAsyncWithRetry(
+                async () => {
+                    const response = await fetch('/api/cursor-cli-execute', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            prompt: prompt,
+                            scopeDirectory: scopeDirectory
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        const error = await response.text();
+                        throw new Error(error || `Server error: ${response.status}`);
+                    }
+                    
+                    const result = await response.json();
+                    
+                    if (!result.success) {
+                        throw new Error(result.error || 'Cursor CLI execution failed');
+                    }
+                    
+                    return result;
                 },
-                body: JSON.stringify({
-                    prompt: prompt,
-                    scopeDirectory: scopeDirectory
-                })
-            });
-            
-            if (!response.ok) {
-                const error = await response.text();
-                throw new Error(error || 'Failed to execute Cursor CLI');
-            }
-            
-            const result = await response.json();
+                { source: 'ChatMessageHandler', operation: 'sendMessage', chatId },
+                { maxRetries: 3, baseDelay: 1000 }
+            );
             
             if (!result.success) {
-                return { success: false, error: result.error || 'Cursor CLI execution failed' };
+                // Show user notification
+                this.errorHandler.showUserNotification(result.error, {
+                    source: 'ChatMessageHandler',
+                    operation: 'sendMessage',
+                    chatId
+                }, {
+                    severity: this.errorHandler.constructor.Severity.ERROR,
+                    title: 'Failed to Send Message'
+                });
+                
+                // Emit error event
+                this.eventSystem.emit('chat:message:error', {
+                    source: 'ChatMessageHandler',
+                    data: { chatId, error: result.error }
+                });
+                
+                // Still add user message to history even on error
+                this.addMessageToHistory(chatId, 'user', userMessage, chatInstance);
+                
+                return { success: false, error: result.error };
             }
             
-            const assistantMessage = result.output || result.stderr || 'No response';
+            const assistantMessage = result.data.output || result.data.stderr || 'No response';
             
             // Add messages to history
             this.addMessageToHistory(chatId, 'user', userMessage, chatInstance);
@@ -81,19 +113,58 @@ export class ChatMessageHandler {
             });
             
             return { success: true, content: assistantMessage };
-        } catch (error) {
-            const errorMessage = error.message || 'Network error';
-            
-            // Emit error event
-            this.eventSystem.emit('chat:message:error', {
-                source: 'ChatMessageHandler',
-                data: { chatId, error: errorMessage }
-            });
-            
-            // Still add user message to history even on error
-            this.addMessageToHistory(chatId, 'user', userMessage, chatInstance);
-            
-            return { success: false, error: errorMessage };
+        } else {
+            // Fallback to original error handling if ErrorHandler not available
+            try {
+                const response = await fetch('/api/cursor-cli-execute', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        scopeDirectory: scopeDirectory
+                    })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error || 'Failed to execute Cursor CLI');
+                }
+                
+                const result = await response.json();
+                
+                if (!result.success) {
+                    return { success: false, error: result.error || 'Cursor CLI execution failed' };
+                }
+                
+                const assistantMessage = result.output || result.stderr || 'No response';
+                
+                // Add messages to history
+                this.addMessageToHistory(chatId, 'user', userMessage, chatInstance);
+                this.addMessageToHistory(chatId, 'assistant', assistantMessage, chatInstance);
+                
+                // Emit message received event
+                this.eventSystem.emit('chat:message:received', {
+                    source: 'ChatMessageHandler',
+                    data: { chatId, message: assistantMessage }
+                });
+                
+                return { success: true, content: assistantMessage };
+            } catch (error) {
+                const errorMessage = error.message || 'Network error';
+                
+                // Emit error event
+                this.eventSystem.emit('chat:message:error', {
+                    source: 'ChatMessageHandler',
+                    data: { chatId, error: errorMessage }
+                });
+                
+                // Still add user message to history even on error
+                this.addMessageToHistory(chatId, 'user', userMessage, chatInstance);
+                
+                return { success: false, error: errorMessage };
+            }
         }
     }
     

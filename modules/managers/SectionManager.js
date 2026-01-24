@@ -14,6 +14,9 @@ class SectionManager {
         this.loadPromptsForProjectCallback = null;
         this.removeInputGuidanceFromPromptCallback = null;
         this.checkDependenciesCallback = null;
+        
+        // Track event listeners for cleanup
+        this.eventListenerCleanups = [];
     }
     
     /**
@@ -228,7 +231,7 @@ class SectionManager {
                     });
                 }
                 
-                this.renderingEngine.renderAll();
+                this.renderingEngine.queueRender(['sections', 'pipeline']);
             }
             
             modal.style.display = 'none';
@@ -242,10 +245,42 @@ class SectionManager {
             pasteBtn.removeEventListener('click', handleCancel);
         };
         
-        pasteBtn.addEventListener('click', handlePaste);
-        const cancelBtn = document.getElementById('previous-step-cancel');
-        if (cancelBtn) {
-            cancelBtn.addEventListener('click', handleCancel);
+        // Track listeners for cleanup
+        if (typeof window !== 'undefined' && window.eventListenerManager) {
+            window.eventListenerManager.add(pasteBtn, 'click', handlePaste);
+            const cancelBtn = document.getElementById('previous-step-cancel');
+            if (cancelBtn) {
+                window.eventListenerManager.add(cancelBtn, 'click', handleCancel);
+            }
+        } else {
+            pasteBtn.addEventListener('click', handlePaste);
+            const cancelBtn = document.getElementById('previous-step-cancel');
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', handleCancel);
+                this.eventListenerCleanups.push(() => {
+                    pasteBtn.removeEventListener('click', handlePaste);
+                    cancelBtn.removeEventListener('click', handleCancel);
+                });
+            } else {
+                this.eventListenerCleanups.push(() => {
+                    pasteBtn.removeEventListener('click', handlePaste);
+                });
+            }
+        }
+    }
+    
+    /**
+     * Cleanup event listeners
+     */
+    cleanup() {
+        // Cleanup using EventListenerManager if available
+        if (typeof window !== 'undefined' && window.eventListenerManager) {
+            // EventListenerManager handles cleanup automatically when elements are removed
+            // But we can explicitly clean up if needed
+        } else {
+            // Fallback: use stored cleanup functions
+            this.eventListenerCleanups.forEach(cleanup => cleanup());
+            this.eventListenerCleanups = [];
         }
     }
     

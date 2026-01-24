@@ -15,6 +15,22 @@ class ProjectManager {
         this.loadPromptsForProjectCallback = null;
         this.addInferenceStepsCallback = null;
         this.initializeExistingOutputsCallback = null;
+        
+        // Track event listeners for cleanup
+        this.eventListenerCleanups = [];
+    }
+    
+    /**
+     * Cleanup event listeners
+     */
+    cleanup() {
+        // ProjectManager doesn't directly attach listeners, but clean up any tracked ones
+        if (typeof window !== 'undefined' && window.eventListenerManager) {
+            // EventListenerManager handles cleanup automatically
+        } else {
+            this.eventListenerCleanups.forEach(cleanup => cleanup());
+            this.eventListenerCleanups = [];
+        }
     }
     
     /**

@@ -15,6 +15,9 @@ export class ChatSettings {
         this.onSaveCallback = null;
         this.onCancelCallback = null;
         
+        // Track event listeners for cleanup
+        this.eventListenerCleanups = [];
+        
         this._initialize();
     }
     
@@ -39,46 +42,100 @@ export class ChatSettings {
         // Set up close button
         const closeButton = this.modalElement.querySelector('.chat-settings-close');
         if (closeButton) {
-            closeButton.addEventListener('click', () => {
+            const closeHandler = () => {
                 this.hide();
-            });
+            };
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(closeButton, 'click', closeHandler);
+            } else {
+                closeButton.addEventListener('click', closeHandler);
+                this.eventListenerCleanups.push(() => {
+                    closeButton.removeEventListener('click', closeHandler);
+                });
+            }
         }
         
         // Set up save button
         const saveButton = this.modalElement.querySelector('.chat-settings-save');
         if (saveButton) {
-            saveButton.addEventListener('click', () => {
+            const saveHandler = () => {
                 this._handleSave();
-            });
+            };
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(saveButton, 'click', saveHandler);
+            } else {
+                saveButton.addEventListener('click', saveHandler);
+                this.eventListenerCleanups.push(() => {
+                    saveButton.removeEventListener('click', saveHandler);
+                });
+            }
         }
         
         // Set up cancel button
         const cancelButton = this.modalElement.querySelector('.chat-settings-cancel');
         if (cancelButton) {
-            cancelButton.addEventListener('click', () => {
+            const cancelHandler = () => {
                 this.hide();
-            });
+            };
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(cancelButton, 'click', cancelHandler);
+            } else {
+                cancelButton.addEventListener('click', cancelHandler);
+                this.eventListenerCleanups.push(() => {
+                    cancelButton.removeEventListener('click', cancelHandler);
+                });
+            }
         }
         
         // Set up clear history button
         const clearHistoryButton = this.modalElement.querySelector('.chat-settings-clear-history');
         if (clearHistoryButton) {
-            clearHistoryButton.addEventListener('click', () => {
+            const clearHandler = () => {
                 if (confirm('Are you sure you want to clear all chat history? This cannot be undone.')) {
                     this.eventSystem.emit('chat:history:clear', {
                         source: 'ChatSettings',
                         data: { chatId: this.currentChatId }
                     });
                 }
-            });
+            };
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(clearHistoryButton, 'click', clearHandler);
+            } else {
+                clearHistoryButton.addEventListener('click', clearHandler);
+                this.eventListenerCleanups.push(() => {
+                    clearHistoryButton.removeEventListener('click', clearHandler);
+                });
+            }
         }
         
         // Close on outside click
-        this.modalElement.addEventListener('click', (e) => {
+        const modalClickHandler = (e) => {
             if (e.target === this.modalElement) {
                 this.hide();
             }
-        });
+        };
+        if (typeof window !== 'undefined' && window.eventListenerManager) {
+            window.eventListenerManager.add(this.modalElement, 'click', modalClickHandler);
+        } else {
+            this.modalElement.addEventListener('click', modalClickHandler);
+            this.eventListenerCleanups.push(() => {
+                this.modalElement.removeEventListener('click', modalClickHandler);
+            });
+        }
+    }
+    
+    /**
+     * Cleanup event listeners
+     */
+    destroy() {
+        if (typeof window !== 'undefined' && window.eventListenerManager) {
+            if (this.modalElement) {
+                window.eventListenerManager.cleanup(this.modalElement);
+            }
+        } else {
+            this.eventListenerCleanups.forEach(cleanup => cleanup());
+            this.eventListenerCleanups = [];
+        }
     }
     
     /**

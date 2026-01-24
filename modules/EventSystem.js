@@ -62,6 +62,24 @@ class EventSystem {
         this.listeners.clear();
     }
     
+    /**
+     * Unregister all handlers for a specific event type
+     * @param {string} eventType - Event type to clear
+     */
+    unregisterAll(eventType) {
+        if (this.listeners.has(eventType)) {
+            this.listeners.delete(eventType);
+        }
+    }
+    
+    /**
+     * Get all registered event types
+     * @returns {Array<string>} Array of event types
+     */
+    getRegisteredEventTypes() {
+        return Array.from(this.listeners.keys());
+    }
+    
     // Check if event type has listeners
     hasListeners(eventType) {
         return this.listeners.has(eventType) && this.listeners.get(eventType).length > 0;

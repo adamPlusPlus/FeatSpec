@@ -27,7 +27,10 @@ class AppConstants {
         
         // Server operations
         CURSOR_CLI_TIMEOUT: 300000,       // Cursor CLI timeout (5min)
-        SERVER_OPERATION_DELAY: 100       // Server operation delay
+        SERVER_OPERATION_DELAY: 100,      // Server operation delay
+        
+        // State management
+        STATE_SAVE_DEBOUNCE: 500          // State save debounce delay (500ms)
     };
     
     /**

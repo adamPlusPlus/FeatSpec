@@ -19,6 +19,9 @@ export class ChatWindow {
         this.resizeCleanup = null;
         this.storageKey = 'chat_window_position';
         
+        // Track event listeners for cleanup
+        this.eventListenerCleanups = [];
+        
         this._initialize();
     }
     

@@ -13,6 +13,10 @@ class InitializationManager {
         this.loadPromptsForProjectCallback = null;
         this.createSampleProjectCallback = null;
         this.setupChatHandlersCallback = null;
+        
+        // Track event listeners and handlers for cleanup
+        this.eventListenerCleanups = [];
+        this.eventSystemHandlers = []; // Track eventSystem.register handlers for cleanup
     }
     
     /**
@@ -152,9 +156,69 @@ class InitializationManager {
         
         // Start initialization
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initChat);
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(document, 'DOMContentLoaded', initChat);
+            } else {
+                document.addEventListener('DOMContentLoaded', initChat);
+                this.eventListenerCleanups.push(() => {
+                    document.removeEventListener('DOMContentLoaded', initChat);
+                });
+            }
         } else {
             initChat();
+        }
+    }
+    
+    /**
+     * Cleanup event listeners and handlers
+     */
+    cleanup() {
+        // Unregister all event system handlers
+        for (const { eventType, handler } of this.eventSystemHandlers) {
+            this.eventSystem.unregister(eventType, handler);
+        }
+        this.eventSystemHandlers = [];
+        
+        // Cleanup document and window listeners
+        if (typeof window !== 'undefined' && window.eventListenerManager) {
+            window.eventListenerManager.cleanup(document);
+            window.eventListenerManager.cleanup(window);
+        } else {
+            this.eventListenerCleanups.forEach(cleanup => cleanup());
+            this.eventListenerCleanups = [];
+        }
+        
+        // Cleanup all managers
+        if (this.managers) {
+            if (this.managers.projectManager && typeof this.managers.projectManager.cleanup === 'function') {
+                this.managers.projectManager.cleanup();
+            }
+            if (this.managers.sectionManager && typeof this.managers.sectionManager.cleanup === 'function') {
+                this.managers.sectionManager.cleanup();
+            }
+            if (this.managers.uiManager && typeof this.managers.uiManager.cleanup === 'function') {
+                this.managers.uiManager.cleanup();
+            }
+            if (this.managers.fileOperations && typeof this.managers.fileOperations.cleanup === 'function') {
+                this.managers.fileOperations.cleanup();
+            }
+        }
+        
+        // Cleanup rendering engine
+        if (this.renderingEngine && typeof this.renderingEngine.cleanup === 'function') {
+            this.renderingEngine.cleanup();
+        }
+        
+        // Cleanup virtual lists
+        if (this.renderingEngine) {
+            if (this.renderingEngine.projectsVirtualList) {
+                this.renderingEngine.projectsVirtualList.destroy();
+                this.renderingEngine.projectsVirtualList = null;
+            }
+            if (this.renderingEngine.sectionsVirtualList) {
+                this.renderingEngine.sectionsVirtualList.destroy();
+                this.renderingEngine.sectionsVirtualList = null;
+            }
         }
     }
     
@@ -249,15 +313,17 @@ class InitializationManager {
      */
     setupEventHandlers() {
         // Save last active project when project is activated
-        this.eventSystem.register(window.EventType.PROJECT_ACTIVATED, (event) => {
+        const projectActivatedHandler = (event) => {
             const { projectId } = event.data;
             if (projectId) {
                 this.saveLastActiveProject(projectId);
             }
-        });
+        };
+        this.eventSystem.register(window.EventType.PROJECT_ACTIVATED, projectActivatedHandler);
+        this.eventSystemHandlers.push({ eventType: window.EventType.PROJECT_ACTIVATED, handler: projectActivatedHandler });
         
         // Clear saved last active project if it was deleted
-        this.eventSystem.register(window.EventType.PROJECT_DELETED, (event) => {
+        const projectDeletedHandler = (event) => {
             const { projectId } = event.data;
             if (projectId) {
                 const savedLastActive = localStorage.getItem('feat-spec-last-active-project');
@@ -265,38 +331,67 @@ class InitializationManager {
                     localStorage.removeItem('feat-spec-last-active-project');
                 }
             }
-        });
+        };
+        this.eventSystem.register(window.EventType.PROJECT_DELETED, projectDeletedHandler);
+        this.eventSystemHandlers.push({ eventType: window.EventType.PROJECT_DELETED, handler: projectDeletedHandler });
         
-        // Auto-save on state changes
-        this.eventSystem.register(window.EventType.STATE_CHANGED, (event) => {
+        // Auto-save on state changes (debounced - handled by DataLayer)
+        const stateChangedHandler = (event) => {
             const state = this.stateManager.getState();
-            this.dataLayer.saveState(state);
-        });
+            this.dataLayer.saveState(state); // DataLayer now handles debouncing internally
+        };
+        this.eventSystem.register(window.EventType.STATE_CHANGED, stateChangedHandler);
+        this.eventSystemHandlers.push({ eventType: window.EventType.STATE_CHANGED, handler: stateChangedHandler });
+        
+        // Flush pending saves and cleanup on page unload
+        const beforeUnloadHandler = () => {
+            // Flush pending state saves
+            if (this.dataLayer && typeof this.dataLayer.flushPendingSave === 'function') {
+                this.dataLayer.flushPendingSave();
+            }
+            
+            // Cleanup all components
+            this.cleanup();
+        };
+        if (typeof window !== 'undefined' && window.eventListenerManager) {
+            window.eventListenerManager.add(window, 'beforeunload', beforeUnloadHandler);
+        } else {
+            window.addEventListener('beforeunload', beforeUnloadHandler);
+            this.eventListenerCleanups.push(() => {
+                window.removeEventListener('beforeunload', beforeUnloadHandler);
+            });
+        }
         
         // Handle context menu actions
-        this.eventSystem.register(window.EventType.CONTEXT_MENU_ACTION_SELECTED, (event) => {
+        const contextMenuHandler = (event) => {
             const actionId = event.data.action?.id || event.data.action;
             if (this.managers.uiManager) {
                 this.managers.uiManager.handleContextMenuAction(actionId, event.data.context);
             }
-        });
+        };
+        this.eventSystem.register(window.EventType.CONTEXT_MENU_ACTION_SELECTED, contextMenuHandler);
+        this.eventSystemHandlers.push({ eventType: window.EventType.CONTEXT_MENU_ACTION_SELECTED, handler: contextMenuHandler });
         
         // Handle keyboard shortcuts
-        this.eventSystem.register(window.EventType.KEYBOARD_SHORTCUT_DETECTED, (event) => {
+        const keyboardShortcutHandler = (event) => {
             if (this.managers.uiManager) {
                 this.managers.uiManager.handleKeyboardShortcut(event.data);
             }
-        });
+        };
+        this.eventSystem.register(window.EventType.KEYBOARD_SHORTCUT_DETECTED, keyboardShortcutHandler);
+        this.eventSystemHandlers.push({ eventType: window.EventType.KEYBOARD_SHORTCUT_DETECTED, handler: keyboardShortcutHandler });
         
         // Handle modal actions
-        this.eventSystem.register(window.EventType.MODAL_SAVED, (event) => {
+        const modalSavedHandler = (event) => {
             if (this.managers.uiManager) {
                 this.managers.uiManager.handleModalSave(event.data.type, event.data.data);
             }
-        });
+        };
+        this.eventSystem.register(window.EventType.MODAL_SAVED, modalSavedHandler);
+        this.eventSystemHandlers.push({ eventType: window.EventType.MODAL_SAVED, handler: modalSavedHandler });
         
         // Handle file operations
-        this.eventSystem.register(window.EventType.FILE_LOADED, async (event) => {
+        const fileLoadedHandler = async (event) => {
             // Autosave previous project group before loading new one
             if (this.managers.projectManager) {
                 await this.managers.projectManager.autosaveCurrentProjectGroup();
@@ -329,10 +424,12 @@ class InitializationManager {
             }
             
             this.renderingEngine.renderAll();
-        });
+        };
+        this.eventSystem.register(window.EventType.FILE_LOADED, fileLoadedHandler);
+        this.eventSystemHandlers.push({ eventType: window.EventType.FILE_LOADED, handler: fileLoadedHandler });
         
         // Refresh dropdown when files are saved
-        this.eventSystem.register(window.EventType.FILE_SAVED, async (event) => {
+        const fileSavedHandler = async (event) => {
             if (this.managers.projectManager) {
                 await this.managers.projectManager.populateProjectGroupDropdown();
             }
@@ -340,16 +437,20 @@ class InitializationManager {
             if (this.managers.uiManager) {
                 this.managers.uiManager.setupProjectGroupDropdownListeners();
             }
-        });
+        };
+        this.eventSystem.register(window.EventType.FILE_SAVED, fileSavedHandler);
+        this.eventSystemHandlers.push({ eventType: window.EventType.FILE_SAVED, handler: fileSavedHandler });
         
         // Handle automation directory initialization
-        this.eventSystem.register('ensure-automation-directory', async (event) => {
+        const ensureAutomationDirHandler = async (event) => {
             const projectId = event.data.projectId;
             if (projectId && this.appInstance && this.appInstance.ensureAutomationDirectory) {
                 await this.appInstance.ensureAutomationDirectory(projectId);
                 // Re-render to show the new directory
                 this.renderingEngine.renderAll();
             }
-        });
+        };
+        this.eventSystem.register('ensure-automation-directory', ensureAutomationDirHandler);
+        this.eventSystemHandlers.push({ eventType: 'ensure-automation-directory', handler: ensureAutomationDirHandler });
     }
 }

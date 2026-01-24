@@ -14,6 +14,9 @@ class UIManager {
         this.projectManager = null;
         this.sectionManager = null;
         this.fileOperations = null;
+        
+        // Track event listeners for cleanup
+        this.eventListenerCleanups = [];
     }
     
     /**
@@ -47,7 +50,7 @@ class UIManager {
         // New project button
         const newProjectBtn = document.getElementById('new-project');
         if (newProjectBtn) {
-            newProjectBtn.addEventListener('click', () => {
+            const clickHandler = () => {
                 const name = prompt('Enter project name:');
                 if (name && name.trim()) {
                     const workflowType = confirm('Use UX-Only workflow? (Click OK for UX-Only, Cancel for Full)') ? 'ux-only' : 'full';
@@ -56,40 +59,68 @@ class UIManager {
                         this.renderingEngine.renderAll();
                     }
                 }
-            });
+            };
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(newProjectBtn, 'click', clickHandler);
+            } else {
+                newProjectBtn.addEventListener('click', clickHandler);
+                this.eventListenerCleanups.push(() => {
+                    newProjectBtn.removeEventListener('click', clickHandler);
+                });
+            }
         }
         
         // New project group button
         const newProjectGroupBtn = document.getElementById('new-project-group');
         if (newProjectGroupBtn) {
-            newProjectGroupBtn.addEventListener('click', async () => {
+            const clickHandler = async () => {
                 if (this.handleContextMenuActionCallback) {
                     await this.handleContextMenuActionCallback('new-project-group', { type: 'projectGroup' });
                 }
-            });
+            };
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(newProjectGroupBtn, 'click', clickHandler);
+            } else {
+                newProjectGroupBtn.addEventListener('click', clickHandler);
+                this.eventListenerCleanups.push(() => {
+                    newProjectGroupBtn.removeEventListener('click', clickHandler);
+                });
+            }
         }
         
         // View toggle buttons
         const viewSectionBtn = document.getElementById('view-section');
         const viewPipelineBtn = document.getElementById('view-pipeline');
         if (viewSectionBtn && viewPipelineBtn) {
-            viewSectionBtn.addEventListener('click', () => {
+            const sectionClickHandler = () => {
                 document.getElementById('section-view').style.display = 'block';
                 document.getElementById('pipeline-flow-view').style.display = 'none';
                 viewSectionBtn.classList.add('active');
                 viewPipelineBtn.classList.remove('active');
-            });
-            viewPipelineBtn.addEventListener('click', () => {
+            };
+            const pipelineClickHandler = () => {
                 document.getElementById('section-view').style.display = 'none';
                 document.getElementById('pipeline-flow-view').style.display = 'block';
                 viewPipelineBtn.classList.add('active');
                 viewSectionBtn.classList.remove('active');
                 this.renderingEngine.renderPipelineFlowView();
-            });
+            };
+            
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(viewSectionBtn, 'click', sectionClickHandler);
+                window.eventListenerManager.add(viewPipelineBtn, 'click', pipelineClickHandler);
+            } else {
+                viewSectionBtn.addEventListener('click', sectionClickHandler);
+                viewPipelineBtn.addEventListener('click', pipelineClickHandler);
+                this.eventListenerCleanups.push(() => {
+                    viewSectionBtn.removeEventListener('click', sectionClickHandler);
+                    viewPipelineBtn.removeEventListener('click', pipelineClickHandler);
+                });
+            }
         }
         
         // Universal click-outside-to-close handler for all modals
-        document.addEventListener('click', (e) => {
+        const documentClickHandler = (e) => {
             // Check if click is on modal backdrop
             if (e.target.classList.contains('modal-backdrop')) {
                 const modal = e.target.closest('.modal');
@@ -110,7 +141,16 @@ class UIManager {
                     }
                 }
             }
-        });
+        };
+        
+        if (typeof window !== 'undefined' && window.eventListenerManager) {
+            window.eventListenerManager.add(document, 'click', documentClickHandler);
+        } else {
+            document.addEventListener('click', documentClickHandler);
+            this.eventListenerCleanups.push(() => {
+                document.removeEventListener('click', documentClickHandler);
+            });
+        }
     }
     
     /**
@@ -127,7 +167,7 @@ class UIManager {
         }
         
         // Handle selection via event delegation
-        container.addEventListener('change', async (e) => {
+        const changeHandler = async (e) => {
             if (e.target.id === 'project-group-select') {
                 const selectedFile = e.target.value;
                 if (selectedFile && this.projectManager) {
@@ -139,17 +179,29 @@ class UIManager {
                     });
                 }
             }
-        });
+        };
         
         // Add right-click context menu via event delegation
-        container.addEventListener('contextmenu', (e) => {
+        const contextMenuHandler = (e) => {
             if (e.target.id === 'project-group-select' || e.target.closest('#project-group-select')) {
                 e.preventDefault();
                 e.stopPropagation();
                 const context = { type: 'projectGroupDropdown' };
                 this.contextMenuHandler.showMenu({ x: e.clientX, y: e.clientY }, context);
             }
-        });
+        };
+        
+        if (typeof window !== 'undefined' && window.eventListenerManager) {
+            window.eventListenerManager.add(container, 'change', changeHandler);
+            window.eventListenerManager.add(container, 'contextmenu', contextMenuHandler);
+        } else {
+            container.addEventListener('change', changeHandler);
+            container.addEventListener('contextmenu', contextMenuHandler);
+            this.eventListenerCleanups.push(() => {
+                container.removeEventListener('change', changeHandler);
+                container.removeEventListener('contextmenu', contextMenuHandler);
+            });
+        }
         
         // Mark as attached to prevent duplicate listeners
         container._projectGroupListenersAttached = true;
@@ -157,6 +209,34 @@ class UIManager {
         // Populate dropdown with saved project groups
         if (this.projectManager) {
             this.projectManager.populateProjectGroupDropdown();
+        }
+    }
+    
+    /**
+     * Cleanup event listeners
+     */
+    cleanup() {
+        // Cleanup using EventListenerManager if available
+        if (typeof window !== 'undefined' && window.eventListenerManager) {
+            // Cleanup document listeners
+            window.eventListenerManager.cleanup(document);
+            
+            // Cleanup specific elements
+            const newProjectBtn = document.getElementById('new-project');
+            const newProjectGroupBtn = document.getElementById('new-project-group');
+            const viewSectionBtn = document.getElementById('view-section');
+            const viewPipelineBtn = document.getElementById('view-pipeline');
+            const container = document.querySelector('.project-group-container');
+            
+            if (newProjectBtn) window.eventListenerManager.cleanup(newProjectBtn);
+            if (newProjectGroupBtn) window.eventListenerManager.cleanup(newProjectGroupBtn);
+            if (viewSectionBtn) window.eventListenerManager.cleanup(viewSectionBtn);
+            if (viewPipelineBtn) window.eventListenerManager.cleanup(viewPipelineBtn);
+            if (container) window.eventListenerManager.cleanup(container);
+        } else {
+            // Fallback: use stored cleanup functions
+            this.eventListenerCleanups.forEach(cleanup => cleanup());
+            this.eventListenerCleanups = [];
         }
     }
     

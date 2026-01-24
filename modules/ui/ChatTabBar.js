@@ -14,6 +14,9 @@ export class ChatTabBar {
         this.tabs = new Map(); // chatId -> tab element
         this.activeTabId = null;
         
+        // Track event listeners for cleanup
+        this.eventListenerCleanups = [];
+        
         this._initialize();
     }
     
@@ -38,12 +41,44 @@ export class ChatTabBar {
         // Add new chat button if it exists
         const newChatButton = this.containerElement.querySelector('.chat-new-tab-button');
         if (newChatButton) {
-            newChatButton.addEventListener('click', () => {
+            const clickHandler = () => {
                 this.eventSystem.emit('chat:tab:new', {
                     source: 'ChatTabBar',
                     data: {}
                 });
-            });
+            };
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(newChatButton, 'click', clickHandler);
+            } else {
+                newChatButton.addEventListener('click', clickHandler);
+                this.eventListenerCleanups.push(() => {
+                    newChatButton.removeEventListener('click', clickHandler);
+                });
+            }
+        }
+    }
+    
+    /**
+     * Cleanup event listeners
+     */
+    destroy() {
+        // Cleanup all tab listeners
+        for (const [chatId, tabElement] of this.tabs.entries()) {
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.cleanup(tabElement);
+            }
+        }
+        this.tabs.clear();
+        
+        // Cleanup other listeners
+        if (typeof window !== 'undefined' && window.eventListenerManager) {
+            const newChatButton = this.containerElement?.querySelector('.chat-new-tab-button');
+            if (newChatButton) {
+                window.eventListenerManager.cleanup(newChatButton);
+            }
+        } else {
+            this.eventListenerCleanups.forEach(cleanup => cleanup());
+            this.eventListenerCleanups = [];
         }
     }
     

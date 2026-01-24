@@ -5,11 +5,22 @@ class DataLayer {
         this.errorHandler = errorHandler;
         this.storageKey = storageKey;
         
+        // Debounced save instance (will be initialized after DebouncedSave is available)
+        this.debouncedSaveInstance = null;
+        
+        // Web Worker for large state serialization (> 1MB)
+        this.stateWorker = null;
+        this.workerRequestId = 0;
+        this.workerPendingRequests = new Map(); // requestId -> { resolve, reject }
+        this._initializeStateWorker();
+        
         // Storage Interface (localStorage wrapper)
+        // Note: save() is now async-aware but maintains sync interface for compatibility
         this.storageInterface = {
             save: (key, value) => {
                 if (this.errorHandler) {
                     const result = this.errorHandler.handleSync(() => {
+                        // For storageInterface.save, use inline serialization (smaller operations)
                         localStorage.setItem(key, JSON.stringify(value));
                     }, { source: 'DataLayer', operation: 'storage.save' });
                     if (!result.success) {
@@ -160,38 +171,179 @@ class DataLayer {
         };
     }
     
-    // Save state to persistent storage
-    saveState(state) {
-        if (this.errorHandler) {
-            const result = this.errorHandler.handleSync(() => {
-                this.storageInterface.save(this.storageKey, state);
-                this.eventSystem.emit(EventType.STATE_SAVED, {
-                    source: 'DataLayer',
-                    data: { state }
-                });
-            }, { source: 'DataLayer', operation: 'saveState' });
-            if (!result.success) {
-                this.eventSystem.emit(EventType.FILE_ERROR, {
-                    source: 'DataLayer',
-                    data: { error: result.error, operation: 'saveState', code: result.code }
-                });
-                throw new Error(result.error);
-            }
-        } else {
-            // Fallback to original error handling
+    /**
+     * Initialize Web Worker for state serialization
+     * @private
+     */
+    _initializeStateWorker() {
+        if (typeof Worker !== 'undefined') {
             try {
-                this.storageInterface.save(this.storageKey, state);
-                this.eventSystem.emit(EventType.STATE_SAVED, {
-                    source: 'DataLayer',
-                    data: { state }
-                });
+                this.stateWorker = new Worker('workers/stateSerializer.worker.js');
+                this.stateWorker.onmessage = (e) => {
+                    const { type, data, requestId, error } = e.data;
+                    const pending = this.workerPendingRequests.get(requestId);
+                    if (!pending) return;
+                    
+                    this.workerPendingRequests.delete(requestId);
+                    
+                    if (type === 'error') {
+                        pending.reject(new Error(error));
+                    } else {
+                        pending.resolve(data);
+                    }
+                };
+                this.stateWorker.onerror = (error) => {
+                    console.error('State worker error:', error);
+                    // Reject all pending requests
+                    for (const [requestId, pending] of this.workerPendingRequests.entries()) {
+                        pending.reject(error);
+                    }
+                    this.workerPendingRequests.clear();
+                };
             } catch (error) {
-                this.eventSystem.emit(EventType.FILE_ERROR, {
-                    source: 'DataLayer',
-                    data: { error: error.message, operation: 'saveState' }
-                });
-                throw error;
+                console.warn('Failed to initialize state worker:', error);
+                this.stateWorker = null;
             }
+        }
+    }
+    
+    /**
+     * Serialize state (using worker if large, otherwise inline)
+     * @private
+     * @param {Object} state - State object to serialize
+     * @returns {Promise<string>} Serialized JSON string
+     */
+    async _serializeState(state) {
+        // Estimate state size (rough approximation)
+        const stateString = JSON.stringify(state);
+        const stateSize = new Blob([stateString]).size;
+        const LARGE_STATE_THRESHOLD = 1024 * 1024; // 1MB
+        
+        // Use worker for large states
+        if (stateSize > LARGE_STATE_THRESHOLD && this.stateWorker) {
+            return new Promise((resolve, reject) => {
+                const requestId = ++this.workerRequestId;
+                this.workerPendingRequests.set(requestId, { resolve, reject });
+                
+                // Set timeout (30 seconds)
+                const timeout = setTimeout(() => {
+                    this.workerPendingRequests.delete(requestId);
+                    reject(new Error('State serialization timeout'));
+                }, 30000);
+                
+                // Override resolve/reject to clear timeout
+                const originalResolve = resolve;
+                const originalReject = reject;
+                this.workerPendingRequests.set(requestId, {
+                    resolve: (data) => {
+                        clearTimeout(timeout);
+                        originalResolve(data);
+                    },
+                    reject: (error) => {
+                        clearTimeout(timeout);
+                        originalReject(error);
+                    }
+                });
+                
+                this.stateWorker.postMessage({
+                    type: 'serialize',
+                    data: { state, requestId }
+                });
+            });
+        } else {
+            // Use inline serialization for small states
+            return Promise.resolve(stateString);
+        }
+    }
+    
+    // Internal method to actually save state (called by debounced function)
+    async _saveState(state) {
+        try {
+            // Serialize state (using worker if large)
+            const serialized = await this._serializeState(state);
+            
+            if (this.errorHandler) {
+                const result = this.errorHandler.handleSync(() => {
+                    // Save serialized string to localStorage
+                    localStorage.setItem(this.storageKey, serialized);
+                    this.eventSystem.emit(EventType.STATE_SAVED, {
+                        source: 'DataLayer',
+                        data: { state }
+                    });
+                }, { source: 'DataLayer', operation: 'saveState' });
+                if (!result.success) {
+                    this.eventSystem.emit(EventType.FILE_ERROR, {
+                        source: 'DataLayer',
+                        data: { error: result.error, operation: 'saveState', code: result.code }
+                    });
+                    throw new Error(result.error);
+                }
+            } else {
+                // Fallback to original error handling
+                try {
+                    localStorage.setItem(this.storageKey, serialized);
+                    this.eventSystem.emit(EventType.STATE_SAVED, {
+                        source: 'DataLayer',
+                        data: { state }
+                    });
+                } catch (error) {
+                    this.eventSystem.emit(EventType.FILE_ERROR, {
+                        source: 'DataLayer',
+                        data: { error: error.message, operation: 'saveState' }
+                    });
+                    throw error;
+                }
+            }
+        } catch (error) {
+            this.eventSystem.emit(EventType.FILE_ERROR, {
+                source: 'DataLayer',
+                data: { error: error.message, operation: 'saveState' }
+            });
+            throw error;
+        }
+    }
+    
+    // Initialize debounced save (called after DebouncedSave is available)
+    _initializeDebouncedSave() {
+        if (typeof window !== 'undefined' && window.DebouncedSave && !this.debouncedSaveInstance) {
+            const delay = window.AppConstants?.TIMEOUTS?.STATE_SAVE_DEBOUNCE || 500;
+            // Wrap async _saveState in a function that handles the promise
+            this.debouncedSaveInstance = new window.DebouncedSave((state) => {
+                // Fire and forget - errors are handled in _saveState
+                this._saveState(state).catch(error => {
+                    if (this.errorHandler) {
+                        this.errorHandler.handleError(error, {
+                            source: 'DataLayer',
+                            operation: 'saveState'
+                        });
+                    } else {
+                        console.error('Error saving state:', error);
+                    }
+                });
+            }, delay);
+        }
+    }
+    
+    // Save state to persistent storage (debounced)
+    saveState(state) {
+        // Initialize debounced save if not already done
+        if (!this.debouncedSaveInstance) {
+            this._initializeDebouncedSave();
+        }
+        
+        // If debounced save is available, use it; otherwise save immediately
+        if (this.debouncedSaveInstance) {
+            this.debouncedSaveInstance.save(state);
+        } else {
+            // Fallback to immediate save if DebouncedSave not available
+            this._saveState(state);
+        }
+    }
+    
+    // Flush pending save immediately (for critical saves like beforeunload)
+    flushPendingSave() {
+        if (this.debouncedSaveInstance && this.debouncedSaveInstance.isPending()) {
+            this.debouncedSaveInstance.flush();
         }
     }
     

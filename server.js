@@ -173,8 +173,8 @@ function getDirectoryFiles(dirPath) {
     }
 }
 
-// Read file contents
-function readFile(filePath) {
+// Read file contents (async to prevent blocking)
+async function readFile(filePath) {
     const normalizedPath = path.resolve(PROJECT_ROOT, filePath);
     
     // Security: ensure path is within project root
@@ -183,8 +183,9 @@ function readFile(filePath) {
     }
     
     try {
-        const content = fs.readFileSync(normalizedPath, 'utf8');
-        const stats = fs.statSync(normalizedPath);
+        // Use async readFile for large files to prevent blocking
+        const content = await fs.promises.readFile(normalizedPath, 'utf8');
+        const stats = await fs.promises.stat(normalizedPath);
         return {
             success: true,
             content,
@@ -1190,16 +1191,24 @@ const server = http.createServer((req, res) => {
                         const { filePath } = data;
                         // Normalize path separators
                         const normalizedPath = normalizePath(filePath);
-                        const result = readFile(normalizedPath);
-                        if (result.success) {
-                            errorHandler.sendSuccessResponse(res, result);
-                        } else {
-                            errorHandler.sendErrorResponse(res, result.error, {
+                        // readFile is now async - handle with promise
+                        readFile(normalizedPath).then(result => {
+                            if (result.success) {
+                                errorHandler.sendSuccessResponse(res, result);
+                            } else {
+                                errorHandler.sendErrorResponse(res, result.error, {
+                                    source: 'Server',
+                                    operation: 'read-file',
+                                    filePath: normalizedPath
+                                }, result.error.includes('not found') ? 404 : 500);
+                            }
+                        }).catch(error => {
+                            errorHandler.sendErrorResponse(res, error.message, {
                                 source: 'Server',
                                 operation: 'read-file',
                                 filePath: normalizedPath
-                            }, result.error.includes('not found') ? 404 : 500);
-                        }
+                            }, 500);
+                        });
                     } else if (pathname === '/api/stop-watch') {
                         const { key } = data;
                         // Validate key parameter

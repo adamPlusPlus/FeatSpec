@@ -24,13 +24,26 @@ class RenderingEngine {
         this.multiAgentAutomation = managers.multiAgentAutomation; // For agent discussions
         this.appInstance = managers.appInstance; // For methods not yet in managers
         
+        // Track event listeners for cleanup
+        this.eventListenerCleanups = [];
+        
+        // Change detection: track previous state snapshot
+        this.previousState = null;
+        
+        // RenderQueue for batching renders
+        this.renderQueue = typeof window !== 'undefined' && window.renderQueue ? window.renderQueue : null;
+        
+        // VirtualList instances for large lists
+        this.projectsVirtualList = null;
+        this.sectionsVirtualList = null;
+        
         this.setupEventListeners();
         this.setupDynamicEventListeners();
     }
     
     setupDynamicEventListeners() {
         // Use event delegation for dynamically generated buttons
-        document.addEventListener('click', (e) => {
+        const clickHandler = (e) => {
             const action = e.target.dataset.action;
             if (!action) return;
             
@@ -52,13 +65,13 @@ class RenderingEngine {
                 case 'mark-complete':
                     if (projectId && sectionId && this.sectionManager) {
                         this.sectionManager.markSectionComplete(projectId, sectionId);
-                        this.renderAll();
+                        this.queueRender(['sections', 'pipeline']); // Only sections and pipeline need update
                     }
                     break;
                 case 'mark-revision':
                     if (projectId && sectionId && this.sectionManager) {
                         this.sectionManager.markSectionNeedsRevision(projectId, sectionId);
-                        this.renderAll();
+                        this.queueRender(['sections', 'pipeline']); // Only sections and pipeline need update
                     }
                     break;
                 case 'copy-prompt-input':
@@ -107,10 +120,20 @@ class RenderingEngine {
                     }
                     break;
             }
-        });
+        };
+        
+        // Track document-level listeners for cleanup
+        if (typeof window !== 'undefined' && window.eventListenerManager) {
+            window.eventListenerManager.add(document, 'click', clickHandler);
+        } else {
+            document.addEventListener('click', clickHandler);
+            this.eventListenerCleanups.push(() => {
+                document.removeEventListener('click', clickHandler);
+            });
+        }
         
         // Handle select change events
-        document.addEventListener('change', (e) => {
+        const changeHandler = (e) => {
             if (e.target.classList.contains('section-jump') && e.target.dataset.action === 'navigate-section-select') {
                 const projectId = e.target.dataset.projectId;
                 const sectionId = e.target.value;
@@ -127,10 +150,19 @@ class RenderingEngine {
                     this.appInstance.updateAutomationId(projectId, sectionId, value);
                 }
             }
-        });
+        };
+        
+        if (typeof window !== 'undefined' && window.eventListenerManager) {
+            window.eventListenerManager.add(document, 'change', changeHandler);
+        } else {
+            document.addEventListener('change', changeHandler);
+            this.eventListenerCleanups.push(() => {
+                document.removeEventListener('change', changeHandler);
+            });
+        }
         
         // Handle blur events for automation ID validation
-        document.addEventListener('blur', (e) => {
+        const blurHandler = (e) => {
             if (e.target.dataset.actionBlur === 'validate-automation-id') {
                 const projectId = e.target.dataset.projectId;
                 const sectionId = e.target.dataset.sectionId;
@@ -139,21 +171,57 @@ class RenderingEngine {
                     this.appInstance.validateAutomationId(projectId, sectionId, value);
                 }
             }
-        }, true);
+        };
+        
+        if (typeof window !== 'undefined' && window.eventListenerManager) {
+            window.eventListenerManager.add(document, 'blur', blurHandler, true);
+        } else {
+            document.addEventListener('blur', blurHandler, true);
+            this.eventListenerCleanups.push(() => {
+                document.removeEventListener('blur', blurHandler, true);
+            });
+        }
+    }
+    
+    /**
+     * Cleanup event listeners
+     */
+    cleanup() {
+        // Cleanup document-level listeners
+        if (typeof window !== 'undefined' && window.eventListenerManager) {
+            window.eventListenerManager.cleanup(document);
+        } else {
+            // Fallback: use stored cleanup functions
+            this.eventListenerCleanups.forEach(cleanup => cleanup());
+            this.eventListenerCleanups = [];
+        }
+        
+        // Note: Element-level listeners are automatically cleaned up when elements are removed
+        // EventSystem listeners are managed by EventSystem and don't need cleanup here
     }
     
     setupEventListeners() {
-        // Listen for state changes and re-render
+        // Listen for state changes and queue incremental render
         this.eventSystem.register(EventType.STATE_CHANGED, (event) => {
-            this.renderAll();
+            this.queueRender(['projects', 'sections', 'pipeline']);
         });
         
-        // Listen for project changes
-        this.eventSystem.register(EventType.PROJECT_CREATED, () => this.renderAll());
-        this.eventSystem.register(EventType.PROJECT_DELETED, () => this.renderAll());
-        this.eventSystem.register(EventType.PROJECT_UPDATED, () => this.renderAll());
-        this.eventSystem.register(EventType.PROJECT_ACTIVATED, () => this.renderAll());
-        this.eventSystem.register(EventType.SECTION_UPDATED, () => this.renderAll());
+        // Listen for project changes - queue specific component renders
+        this.eventSystem.register(EventType.PROJECT_CREATED, () => {
+            this.queueRender(['projects'], 10); // High priority
+        });
+        this.eventSystem.register(EventType.PROJECT_DELETED, () => {
+            this.queueRender(['projects', 'sections', 'pipeline'], 10); // High priority
+        });
+        this.eventSystem.register(EventType.PROJECT_UPDATED, () => {
+            this.queueRender(['projects', 'sections', 'pipeline']);
+        });
+        this.eventSystem.register(EventType.PROJECT_ACTIVATED, () => {
+            this.queueRender(['projects', 'sections', 'pipeline'], 10); // High priority - major change
+        });
+        this.eventSystem.register(EventType.SECTION_UPDATED, () => {
+            this.queueRender(['sections', 'pipeline']); // Sections and pipeline affected
+        });
         
         // Legacy page/element events (for backward compatibility)
         this.eventSystem.register(EventType.PAGE_ADDED, () => this.renderAll());
@@ -165,19 +233,193 @@ class RenderingEngine {
         this.eventSystem.register(EventType.ELEMENT_REORDERED, () => this.renderAll());
     }
     
+    /**
+     * Detect changes between old and new state
+     * @private
+     * @param {Object} oldState - Previous state snapshot
+     * @param {Object} newState - Current state
+     * @returns {Object} Object with changed component flags
+     */
+    _detectChanges(oldState, newState) {
+        if (!oldState) {
+            // First render - everything needs rendering
+            return { projects: true, sections: true, pipeline: true };
+        }
+        
+        const changes = {
+            projects: false,
+            sections: false,
+            pipeline: false
+        };
+        
+        // Check if projects changed
+        if (!oldState.projects || !newState.projects) {
+            changes.projects = oldState.projects !== newState.projects;
+        } else {
+            // Compare projects array
+            if (oldState.projects.length !== newState.projects.length) {
+                changes.projects = true;
+            } else if (oldState.activeProjectId !== newState.activeProjectId) {
+                changes.projects = true;
+            } else {
+                // Deep compare projects
+                for (let i = 0; i < oldState.projects.length; i++) {
+                    const oldProject = oldState.projects[i];
+                    const newProject = newState.projects[i];
+                    if (oldProject.id !== newProject.id || 
+                        oldProject.name !== newProject.name ||
+                        JSON.stringify(oldProject.sections) !== JSON.stringify(newProject.sections)) {
+                        changes.projects = true;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Check if active project or section changed
+        if (oldState.activeProjectId !== newState.activeProjectId ||
+            oldState.activeSectionId !== newState.activeSectionId) {
+            changes.sections = true;
+            changes.pipeline = true;
+        }
+        
+        // Check if sections changed (if active project exists)
+        if (newState.activeProjectId && !changes.sections) {
+            const oldProject = oldState.projects?.find(p => p.id === oldState.activeProjectId);
+            const newProject = newState.projects?.find(p => p.id === newState.activeProjectId);
+            if (oldProject && newProject) {
+                if (oldProject.sections.length !== newProject.sections.length) {
+                    changes.sections = true;
+                    changes.pipeline = true;
+                } else {
+                    // Compare sections
+                    for (let i = 0; i < oldProject.sections.length; i++) {
+                        const oldSection = oldProject.sections[i];
+                        const newSection = newProject.sections[i];
+                        if (oldSection.sectionId !== newSection.sectionId ||
+                            oldSection.status !== newSection.status ||
+                            oldSection.input !== newSection.input ||
+                            oldSection.output !== newSection.output) {
+                            changes.sections = true;
+                            changes.pipeline = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        return changes;
+    }
+    
+    /**
+     * Queue components for rendering using RenderQueue
+     * @param {Array<string>|string} components - Component(s) to render ('projects', 'sections', 'pipeline')
+     * @param {number} priority - Render priority (default: 0)
+     */
+    queueRender(components, priority = 0) {
+        if (!this.renderQueue) {
+            // Fallback to immediate render if RenderQueue not available
+            this.renderAll();
+            return;
+        }
+        
+        const componentArray = Array.isArray(components) ? components : [components];
+        for (const component of componentArray) {
+            this.renderQueue.queueRender(component, priority);
+        }
+        
+        // Setup flush callback if not already done
+        if (!this._renderFlushCallback) {
+            this._renderFlushCallback = (component) => {
+                this.render(component);
+            };
+            
+            // Store original flush method
+            if (!this._originalFlush) {
+                this._originalFlush = this.renderQueue.flush.bind(this.renderQueue);
+                // Override flush to use our callback
+                this.renderQueue.flush = () => {
+                    return this._originalFlush(this._renderFlushCallback);
+                };
+            }
+        }
+    }
+    
+    /**
+     * Render specific component(s)
+     * @param {string|Array<string>} component - Component(s) to render ('projects', 'sections', 'pipeline')
+     */
+    render(component) {
+        const state = this.stateManager.getState();
+        
+        // Check if using new format (projects) or old format (pages)
+        if (state.projects && Array.isArray(state.projects)) {
+            const components = Array.isArray(component) ? component : [component];
+            
+            for (const comp of components) {
+                switch (comp) {
+                    case 'projects':
+                        this.renderProjectsSidebar();
+                        break;
+                    case 'sections':
+                        this.renderSectionView();
+                        break;
+                    case 'pipeline':
+                        this.renderPipelineFlowView();
+                        break;
+                    default:
+                        // Unknown component - skip
+                        break;
+                }
+            }
+        } else if (state.pages && Array.isArray(state.pages)) {
+            // Legacy rendering for old format
+            this.renderLegacyPages();
+        }
+        
+        // Update state snapshot after render
+        try {
+            this.previousState = JSON.parse(JSON.stringify(state));
+        } catch (error) {
+            // If state is too large or circular, just store reference
+            this.previousState = state;
+        }
+    }
+    
     // Render all - checks for new format (projects) or old format (pages)
+    // This is kept for backward compatibility and full renders when needed
     renderAll() {
         const state = this.stateManager.getState();
         
         // Check if using new format (projects) or old format (pages)
         if (state.projects && Array.isArray(state.projects)) {
-            this.renderProjectsSidebar();
-            this.renderSectionView();
-            this.renderPipelineFlowView();
+            // Use change detection to only render what changed
+            const changes = this._detectChanges(this.previousState, state);
+            
+            if (changes.projects) {
+                this.renderProjectsSidebar();
+            }
+            if (changes.sections) {
+                this.renderSectionView();
+            }
+            if (changes.pipeline) {
+                this.renderPipelineFlowView();
+            }
+            
+            // If nothing changed but this is first render, render everything
+            if (!this.previousState) {
+                this.renderProjectsSidebar();
+                this.renderSectionView();
+                this.renderPipelineFlowView();
+            }
         } else if (state.pages && Array.isArray(state.pages)) {
             // Legacy rendering for old format
             this.renderLegacyPages();
         }
+        
+        // Update state snapshot after render
+        this.previousState = JSON.parse(JSON.stringify(state));
     }
     
     // Render projects sidebar
@@ -188,18 +430,68 @@ class RenderingEngine {
         const state = this.stateManager.getState();
         const activeProjectId = state.activeProjectId;
         
-        sidebar.innerHTML = ''; // Clearing - safe
-        
         if (state.projects.length === 0) {
+            // Clear sidebar efficiently
+            while (sidebar.firstChild) {
+                sidebar.removeChild(sidebar.firstChild);
+            }
             // Static message - safe
-            sidebar.innerHTML = '<p class="empty-message">No projects yet. Create a project to get started!</p>';
+            const emptyMsg = document.createElement('p');
+            emptyMsg.className = 'empty-message';
+            emptyMsg.textContent = 'No projects yet. Create a project to get started!';
+            sidebar.appendChild(emptyMsg);
+            // Clean up virtual list if exists
+            if (this.projectsVirtualList) {
+                this.projectsVirtualList.destroy();
+                this.projectsVirtualList = null;
+            }
             return;
         }
         
-        state.projects.forEach(project => {
-            const projectEl = this.renderProjectItem(project, activeProjectId === project.id);
-            sidebar.appendChild(projectEl);
-        });
+        // Use VirtualList for large lists (> 20 projects)
+        const VIRTUAL_LIST_THRESHOLD = 20;
+        if (state.projects.length > VIRTUAL_LIST_THRESHOLD && typeof window !== 'undefined' && window.VirtualList) {
+            // Use virtual list
+            if (!this.projectsVirtualList) {
+                // Clear sidebar
+                while (sidebar.firstChild) {
+                    sidebar.removeChild(sidebar.firstChild);
+                }
+                
+                // Create virtual list
+                this.projectsVirtualList = new window.VirtualList(sidebar, {
+                    itemHeight: 80, // Estimated project item height
+                    overscan: 3,
+                    renderItem: (project, index) => {
+                        return this.renderProjectItem(project, activeProjectId === project.id);
+                    }
+                });
+            }
+            
+            // Update items
+            this.projectsVirtualList.setItems(state.projects);
+        } else {
+            // Use normal rendering for small lists
+            if (this.projectsVirtualList) {
+                this.projectsVirtualList.destroy();
+                this.projectsVirtualList = null;
+            }
+            
+            // Clear sidebar efficiently
+            while (sidebar.firstChild) {
+                sidebar.removeChild(sidebar.firstChild);
+            }
+            
+            // Use DocumentFragment for batch DOM operations
+            const fragment = document.createDocumentFragment();
+            state.projects.forEach(project => {
+                const projectEl = this.renderProjectItem(project, activeProjectId === project.id);
+                fragment.appendChild(projectEl);
+            });
+            
+            // Append fragment once (single reflow)
+            sidebar.appendChild(fragment);
+        }
     }
     
     // Render a single project item in sidebar
@@ -272,7 +564,7 @@ class RenderingEngine {
             if (firstIncomplete) {
                 this.activeSectionId = firstIncomplete.id || firstIncomplete.sectionId;
             }
-            this.renderAll();
+            this.queueRender(['projects', 'sections', 'pipeline'], 10); // High priority - user action
         });
         
         return item;
@@ -860,6 +1152,98 @@ class RenderingEngine {
         `;
     }
     
+    /**
+     * Render a single pipeline section item as DOM element
+     * @private
+     * @param {Object} section - Section object
+     * @param {Object} project - Project object
+     * @param {number} index - Section index
+     * @returns {HTMLElement} Section item element
+     */
+    _renderPipelineSectionItem(section, project, index) {
+        let deps = { met: true };
+        if (this.sectionLogic) {
+            try {
+                deps = this.sectionLogic.checkDependencies(project.id, section.sectionId) || { met: true };
+            } catch (error) {
+                if (this.errorHandler) {
+                    this.errorHandler.handleError(error, {
+                        source: 'RenderingEngine',
+                        operation: 'renderPipelineSectionItem',
+                        projectId: project.id,
+                        sectionId: section.sectionId
+                    });
+                } else {
+                    console.warn('Error checking dependencies:', error);
+                }
+            }
+        }
+        const isLocked = !deps.met;
+        
+        let statusIcon = '○';
+        if (section.status === 'complete') statusIcon = '●';
+        else if (section.status === 'in_progress') statusIcon = '◐';
+        else if (section.status === 'needs_revision') statusIcon = '⚠';
+        else if (section.status === 'skipped') statusIcon = '⊘';
+        
+        const lockedClass = isLocked ? 'locked' : '';
+        const activeClass = section.sectionId === this.activeSectionId ? 'active' : '';
+        const sectionTypeClass = section.isProcessStep ? 'process-step' : 
+                               section.isInferenceStep ? 'inference-step' : 
+                               'core-step';
+        
+        // Show modifiers if any
+        const modifierBadges = (section.modifiers || []).length > 0 ? 
+            `<span class="modifier-count" title="${section.modifiers.join(', ')}">🏷️ ${section.modifiers.length}</span>` : '';
+        
+        // Show section type badge
+        const typeBadge = this.renderSectionTypeBadge(section);
+        
+        // Show quality score for multi-agent projects (if available)
+        let qualityScoreBadge = '';
+        if (project.automationEngine === 'multi-agent' && section.status === 'complete') {
+            if (this.multiAgentAutomation && this.multiAgentAutomation.qualityScores) {
+                const qualityScore = this.multiAgentAutomation.qualityScores.get(section.sectionId);
+                if (qualityScore && typeof qualityScore.score === 'number') {
+                    const scorePercent = (qualityScore.score * 100).toFixed(0);
+                    const scoreColor = qualityScore.score >= 0.9 ? '#4caf50' : 
+                                     qualityScore.score >= 0.8 ? '#8bc34a' : 
+                                     qualityScore.score >= 0.7 ? '#ff9800' : '#f44336';
+                    qualityScoreBadge = `<span class="quality-score" style="color: ${scoreColor};" title="Quality Score: ${scorePercent}%">⭐ ${scorePercent}%</span>`;
+                }
+            }
+        }
+        
+        const item = document.createElement('div');
+        item.className = `pipeline-section-item ${lockedClass} ${activeClass} ${sectionTypeClass}`;
+        item.dataset.projectId = project.id;
+        item.dataset.sectionId = section.sectionId;
+        item.dataset.action = 'navigate-section';
+        
+        // section.sectionName contains user data - escape and use safeSetInnerHTML
+        const itemHtml = `
+            <div class="section-item-header">
+                <span class="section-icon">${isLocked ? '🔒' : statusIcon}</span>
+                <span class="section-name">${this.escapeHtml(section.sectionName)}</span>
+                ${typeBadge}
+            </div>
+            <div class="section-item-meta">
+                ${modifierBadges}
+                ${qualityScoreBadge}
+                ${project.automationEngine === 'multi-agent' && this.multiAgentAutomation && this.multiAgentAutomation.agentDiscussions ? this.renderAgentDiscussionIndicator(project.id, section.sectionId) : ''}
+                <span class="section-status">${section.status === 'complete' ? '✓' : section.status === 'in_progress' ? '⏳' : section.status === 'needs_revision' ? '⚠' : ''}</span>
+            </div>
+        `;
+        
+        if (window.safeSetInnerHTML) {
+            window.safeSetInnerHTML(item, itemHtml, { allowMarkdown: false });
+        } else {
+            item.innerHTML = itemHtml;
+        }
+        
+        return item;
+    }
+    
     // Render pipeline flow view
     renderPipelineFlowView() {
         const flowView = document.getElementById('pipeline-flow-view');
@@ -869,8 +1253,17 @@ class RenderingEngine {
         const activeProject = this.stateManager.getActiveProject();
         
         if (!activeProject) {
+            // Clean up virtual list if exists
+            if (this.sectionsVirtualList) {
+                this.sectionsVirtualList.destroy();
+                this.sectionsVirtualList = null;
+            }
             // Static message - safe
-            flowView.innerHTML = '<div class="pipeline-flow-placeholder"><p>Select a project to view pipeline</p></div>';
+            if (window.safeSetInnerHTML) {
+                window.safeSetInnerHTML(flowView, '<div class="pipeline-flow-placeholder"><p>Select a project to view pipeline</p></div>', { trusted: false });
+            } else {
+                flowView.innerHTML = '<div class="pipeline-flow-placeholder"><p>Select a project to view pipeline</p></div>';
+            }
             return;
         }
         
@@ -969,76 +1362,7 @@ class RenderingEngine {
             </div>
         </div>`;
         
-        html += '<div class="pipeline-sections">';
-        
-        // Render all sections from the project (includes inference steps for Case 2)
-        activeProject.sections.forEach((section, index) => {
-            let deps = { met: true };
-            if (this.sectionLogic) {
-                try {
-                    deps = this.sectionLogic.checkDependencies(activeProject.id, section.sectionId) || { met: true };
-                } catch (error) {
-                    console.warn('Error checking dependencies:', error);
-                }
-            }
-            const isLocked = !deps.met;
-            
-            let statusIcon = '○';
-            if (section.status === 'complete') statusIcon = '●';
-            else if (section.status === 'in_progress') statusIcon = '◐';
-            else if (section.status === 'needs_revision') statusIcon = '⚠';
-            else if (section.status === 'skipped') statusIcon = '⊘';
-            
-            const lockedClass = isLocked ? 'locked' : '';
-            const activeClass = section.sectionId === this.activeSectionId ? 'active' : '';
-            const sectionTypeClass = section.isProcessStep ? 'process-step' : 
-                                   section.isInferenceStep ? 'inference-step' : 
-                                   'core-step';
-            
-            // Show modifiers if any
-            const modifierBadges = (section.modifiers || []).length > 0 ? 
-                `<span class="modifier-count" title="${section.modifiers.join(', ')}">🏷️ ${section.modifiers.length}</span>` : '';
-            
-            // Show section type badge
-            const typeBadge = this.renderSectionTypeBadge(section);
-            
-            // Show quality score for multi-agent projects (if available)
-            let qualityScoreBadge = '';
-            if (activeProject.automationEngine === 'multi-agent' && section.status === 'complete') {
-                // Try to get quality score from multi-agent system if available
-                if (this.multiAgentAutomation && this.multiAgentAutomation.qualityScores) {
-                    const qualityScore = this.multiAgentAutomation.qualityScores.get(section.sectionId);
-                    if (qualityScore && typeof qualityScore.score === 'number') {
-                        const scorePercent = (qualityScore.score * 100).toFixed(0);
-                        const scoreColor = qualityScore.score >= 0.9 ? '#4caf50' : 
-                                         qualityScore.score >= 0.8 ? '#8bc34a' : 
-                                         qualityScore.score >= 0.7 ? '#ff9800' : '#f44336';
-                        qualityScoreBadge = `<span class="quality-score" style="color: ${scoreColor};" title="Quality Score: ${scorePercent}%">⭐ ${scorePercent}%</span>`;
-                    }
-                }
-            }
-            
-            html += `
-                <div class="pipeline-section-item ${lockedClass} ${activeClass} ${sectionTypeClass}" 
-                     data-project-id="${activeProject.id}" 
-                     data-section-id="${section.sectionId}" 
-                     data-action="navigate-section" data-project-id="${activeProject.id}" data-section-id="${section.sectionId}">
-                    <div class="section-item-header">
-                        <span class="section-icon">${isLocked ? '🔒' : statusIcon}</span>
-                        <span class="section-name">${this.escapeHtml(section.sectionName)}</span>
-                        ${typeBadge}
-                    </div>
-                    <div class="section-item-meta">
-                        ${modifierBadges}
-                        ${qualityScoreBadge}
-                        ${activeProject.automationEngine === 'multi-agent' && this.multiAgentAutomation && this.multiAgentAutomation.agentDiscussions ? this.renderAgentDiscussionIndicator(activeProject.id, section.sectionId) : ''}
-                        <span class="section-status">${section.status === 'complete' ? '✓' : section.status === 'in_progress' ? '⏳' : section.status === 'needs_revision' ? '⚠' : ''}</span>
-                    </div>
-                </div>
-            `;
-        });
-        
-        html += '</div>';
+        html += '<div class="pipeline-sections" id="pipeline-sections-container"></div>';
         html += '</div>';
         
         // html contains user data (section names, project data) - sanitize
@@ -1046,6 +1370,55 @@ class RenderingEngine {
             window.safeSetInnerHTML(flowView, html, { allowMarkdown: false });
         } else {
             flowView.innerHTML = html;
+        }
+        
+        // Render sections list (with virtualization if > 30 sections)
+        const sectionsContainer = document.getElementById('pipeline-sections-container');
+        if (sectionsContainer) {
+            const VIRTUAL_LIST_THRESHOLD = 30;
+            
+            if (activeProject.sections.length > VIRTUAL_LIST_THRESHOLD && typeof window !== 'undefined' && window.VirtualList) {
+                // Use virtual list for large section lists
+                if (!this.sectionsVirtualList) {
+                    // Clear container
+                    while (sectionsContainer.firstChild) {
+                        sectionsContainer.removeChild(sectionsContainer.firstChild);
+                    }
+                    
+                    // Create virtual list
+                    this.sectionsVirtualList = new window.VirtualList(sectionsContainer, {
+                        itemHeight: 70, // Estimated section item height
+                        overscan: 5,
+                        renderItem: (section, index) => {
+                            return this._renderPipelineSectionItem(section, activeProject, index);
+                        }
+                    });
+                }
+                
+                // Update items
+                this.sectionsVirtualList.setItems(activeProject.sections);
+            } else {
+                // Use normal rendering for small lists
+                if (this.sectionsVirtualList) {
+                    this.sectionsVirtualList.destroy();
+                    this.sectionsVirtualList = null;
+                }
+                
+                // Clear container
+                while (sectionsContainer.firstChild) {
+                    sectionsContainer.removeChild(sectionsContainer.firstChild);
+                }
+                
+                // Use DocumentFragment for batch DOM operations
+                const fragment = document.createDocumentFragment();
+                activeProject.sections.forEach((section, index) => {
+                    const sectionEl = this._renderPipelineSectionItem(section, activeProject, index);
+                    fragment.appendChild(sectionEl);
+                });
+                
+                // Append fragment once (single reflow)
+                sectionsContainer.appendChild(fragment);
+            }
         }
         
         // Ensure only one item has the active class (safety check)

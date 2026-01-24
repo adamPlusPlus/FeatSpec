@@ -13,6 +13,9 @@ export class ChatInput {
         this.onSendCallback = null;
         this.onKeyDownCallback = null;
         
+        // Track event listeners for cleanup
+        this.eventListenerCleanups = [];
+        
         this._initialize();
     }
     
@@ -36,14 +39,47 @@ export class ChatInput {
         }
         
         // Set up event listeners
-        this.inputElement.addEventListener('keydown', (e) => {
+        const keyDownHandler = (e) => {
             this._handleKeyDown(e);
-        });
+        };
+        const sendClickHandler = () => {
+            this._handleSend();
+        };
         
-        if (this.sendButtonElement) {
-            this.sendButtonElement.addEventListener('click', () => {
-                this._handleSend();
+        if (typeof window !== 'undefined' && window.eventListenerManager) {
+            window.eventListenerManager.add(this.inputElement, 'keydown', keyDownHandler);
+            if (this.sendButtonElement) {
+                window.eventListenerManager.add(this.sendButtonElement, 'click', sendClickHandler);
+            }
+        } else {
+            this.inputElement.addEventListener('keydown', keyDownHandler);
+            this.eventListenerCleanups.push(() => {
+                this.inputElement.removeEventListener('keydown', keyDownHandler);
             });
+            
+            if (this.sendButtonElement) {
+                this.sendButtonElement.addEventListener('click', sendClickHandler);
+                this.eventListenerCleanups.push(() => {
+                    this.sendButtonElement.removeEventListener('click', sendClickHandler);
+                });
+            }
+        }
+    }
+    
+    /**
+     * Cleanup event listeners
+     */
+    destroy() {
+        if (typeof window !== 'undefined' && window.eventListenerManager) {
+            if (this.inputElement) {
+                window.eventListenerManager.cleanup(this.inputElement);
+            }
+            if (this.sendButtonElement) {
+                window.eventListenerManager.cleanup(this.sendButtonElement);
+            }
+        } else {
+            this.eventListenerCleanups.forEach(cleanup => cleanup());
+            this.eventListenerCleanups = [];
         }
     }
     

@@ -556,12 +556,15 @@ class ProjectManager {
             const response = await fetch('/api/list-files');
             const result = await response.json();
             
-            if (result.success && result.files && result.files.length > 0) {
+            // Server wraps response in { success: true, data: { success: true, files: [...] } }
+            const files = (result.data && result.data.files) || result.files || [];
+            
+            if (result.success && files && files.length > 0) {
                 // Clear existing options
                 projectGroupSelect.innerHTML = ''; // Clearing - safe
                 
                 // Add file options
-                result.files.forEach(file => {
+                files.forEach(file => {
                     const option = document.createElement('option');
                     option.value = file.name;
                     // Display name without .json extension

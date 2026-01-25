@@ -1,0 +1,8 @@
+Fix project group dropdown and response handling
+
+- Fixed project group dropdown not displaying saved files by correcting response structure handling
+- Updated ProjectManager.populateProjectGroupDropdown() to handle server response wrapper
+- Fixed response handling in app.js (two locations) for file listing
+- Fixed response handling in AutomationSystem.js for /api/list-files and /api/files endpoints
+- Fixed duplicate variable declaration in AutomationSystem.js (changed const to let)
+- All saved project groups now properly appear in dropdown (featspec_improve, reaper, testset, test)

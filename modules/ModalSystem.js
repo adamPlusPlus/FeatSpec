@@ -38,17 +38,58 @@ class ModalSystem {
             });
         }
         
-        // Settings modal close handlers
+        // Settings modal close handlers (use event delegation since content is dynamic)
         if (this.settingsModalElement) {
-            const settingsClose = document.getElementById('settings-close');
             const settingsBackdrop = this.settingsModalElement.querySelector('.modal-backdrop');
+            const modalContent = this.settingsModalElement.querySelector('.modal-content');
             
-            if (settingsClose) {
-                settingsClose.addEventListener('click', () => this.closeSettingsModal());
+            // Use event delegation for close button and backdrop
+            const modalClickHandler = (e) => {
+                // Close button click
+                if (e.target.id === 'settings-close' || e.target.closest('#settings-close')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('Settings close button clicked');
+                    this.closeSettingsModal();
+                    return;
+                }
+                
+                // Backdrop click - if click is NOT on modal-content or its children, close modal
+                if (modalContent && !modalContent.contains(e.target)) {
+                    // Click is outside modal-content, so close
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('Settings backdrop clicked (outside modal-content)', { 
+                        target: e.target, 
+                        targetTag: e.target.tagName,
+                        targetClass: e.target.className,
+                        isBackdrop: e.target === settingsBackdrop,
+                        isModal: e.target === this.settingsModalElement
+                    });
+                    this.closeSettingsModal();
+                    return;
+                }
+            };
+            
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(this.settingsModalElement, 'click', modalClickHandler);
+            } else {
+                this.settingsModalElement.addEventListener('click', modalClickHandler);
             }
             
+            // Also attach directly to backdrop as fallback
             if (settingsBackdrop) {
-                settingsBackdrop.addEventListener('click', () => this.closeSettingsModal());
+                const backdropHandler = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('Settings backdrop direct click');
+                    this.closeSettingsModal();
+                };
+                if (typeof window !== 'undefined' && window.eventListenerManager) {
+                    window.eventListenerManager.add(settingsBackdrop, 'click', backdropHandler);
+                } else {
+                    settingsBackdrop.addEventListener('click', backdropHandler);
+                }
             }
         }
     }
@@ -153,23 +194,43 @@ class ModalSystem {
     
     // Open settings modal
     openSettingsModal() {
+        console.log('ModalSystem.openSettingsModal called', { settingsModalElement: this.settingsModalElement });
         if (this.settingsModalElement) {
+            // Ensure modal is visible
+            this.settingsModalElement.style.display = 'flex';
             this.settingsModalElement.classList.add('active');
+            console.log('Settings modal active class added', { 
+                hasActive: this.settingsModalElement.classList.contains('active'),
+                display: this.settingsModalElement.style.display,
+                computedDisplay: window.getComputedStyle(this.settingsModalElement).display
+            });
+            
             this.eventSystem.emit(EventType.MODAL_OPENED, {
                 source: 'ModalSystem',
                 data: { type: 'settings' }
             });
+        } else {
+            console.error('Settings modal element not found!');
         }
     }
     
     // Close settings modal
     closeSettingsModal() {
+        console.log('ModalSystem.closeSettingsModal called', { settingsModalElement: this.settingsModalElement });
         if (this.settingsModalElement) {
+            // Remove inline display style if set
+            this.settingsModalElement.style.display = '';
             this.settingsModalElement.classList.remove('active');
+            console.log('Settings modal closed', { 
+                hasActive: this.settingsModalElement.classList.contains('active'),
+                display: window.getComputedStyle(this.settingsModalElement).display
+            });
             this.eventSystem.emit(EventType.MODAL_CLOSED, {
                 source: 'ModalSystem',
                 data: { type: 'settings' }
             });
+        } else {
+            console.error('Settings modal element not found when trying to close!');
         }
     }
     

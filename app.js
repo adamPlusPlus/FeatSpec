@@ -128,10 +128,6 @@ class PromptSpecApp {
             this.renderingEngine,
             this.errorHandler
         );
-            this.eventSystem,
-            this.stateManager,
-            this.renderingEngine
-        );
         
         // Update renderingEngine with multiAgentAutomation reference
         this.renderingEngine.multiAgentAutomation = this.multiAgentAutomation;
@@ -551,16 +547,23 @@ class PromptSpecApp {
     }
     
     // Setup UI event listeners (buttons, file operations, etc.)
-    // Setup UI listeners - delegates to UIManager
+    // Setup UI listeners - delegates to UIManager, then sets up file operations and settings
     setupUIListeners() {
         if (this.uiManager) {
-            return this.uiManager.setupUIListeners();
+            this.uiManager.setupUIListeners();
         }
+        // Set up file operation handlers that need app instance access
+        this._setupFileOperationListeners();
+        // Set up settings and other button handlers
+        this._setupSettingsAndOtherListeners();
     }
     
-    // Legacy setupUIListeners implementation (if needed for fallback)
-    _setupUIListeners() {
-        // Pane toggle buttons
+    // Setup file operation listeners (needs app instance access)
+    _setupFileOperationListeners() {
+        // Get project group input for save operations
+        const projectGroupInput = document.getElementById('project-group-name');
+        
+        // File operations
         const toggleProjectsSidebar = document.getElementById('toggle-projects-sidebar');
         const toggleProjectsSidebarCollapsed = document.getElementById('toggle-projects-sidebar-collapsed');
         if (toggleProjectsSidebar) {
@@ -606,39 +609,9 @@ class PromptSpecApp {
             });
         }
         
-        // Dropdown toggle
-        const dropdownToggle = document.querySelector('.dropdown-toggle');
-        const dropdownMenu = document.querySelector('.dropdown-menu');
-        if (dropdownToggle && dropdownMenu) {
-            dropdownToggle.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const isActive = dropdownMenu.classList.toggle('active');
-                dropdownToggle.classList.toggle('active', isActive);
-            });
-            
-            // Close dropdown when clicking outside
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('.dropdown')) {
-                    dropdownMenu.classList.remove('active');
-                    dropdownToggle.classList.remove('active');
-                }
-            });
-            
-            // Close dropdown when clicking on menu items (except file operations)
-            dropdownMenu.querySelectorAll('button').forEach(button => {
-                const buttonId = button.id;
-                // Don't auto-close for file operations - they handle their own cleanup
-                if (buttonId !== 'save-file' && buttonId !== 'load-file') {
-                    button.addEventListener('click', () => {
-                        dropdownMenu.classList.remove('active');
-                        dropdownToggle.classList.remove('active');
-                    });
-                }
-            });
-        }
+        // Note: Dropdown toggle is handled by UIManager.setupDropdownListeners()
         
-        // Project group name input
-        const projectGroupInput = document.getElementById('project-group-name');
+        // Project group name input (already declared above)
         if (projectGroupInput) {
             // Load project group name from state
             const state = this.stateManager.getState();
@@ -760,7 +733,7 @@ class PromptSpecApp {
         // File operations
         const saveFileBtn = document.getElementById('save-file');
         if (saveFileBtn) {
-            saveFileBtn.addEventListener('click', async (e) => {
+            const saveFileHandler = async (e) => {
                 e.stopPropagation(); // Prevent dropdown close
                 console.log('Save file button clicked');
                 try {
@@ -838,7 +811,13 @@ class PromptSpecApp {
                         alert('Failed to save file: ' + err.message);
                     }
                 }
-            });
+            };
+            
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(saveFileBtn, 'click', saveFileHandler);
+            } else {
+                saveFileBtn.addEventListener('click', saveFileHandler);
+            }
         } else {
             console.error('Save file button not found!');
         }
@@ -954,7 +933,7 @@ class PromptSpecApp {
         // Load from file handler (server-based with file browser)
         const loadFileBtn = document.getElementById('load-file');
         if (loadFileBtn) {
-            loadFileBtn.addEventListener('click', async (e) => {
+            const loadFileHandler = async (e) => {
                 e.stopPropagation(); // Prevent dropdown close
                 console.log('Load file button clicked');
                 
@@ -966,7 +945,13 @@ class PromptSpecApp {
                 
                 // Show file browser modal
                 await this.showFileBrowserModal();
-            });
+            };
+            
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(loadFileBtn, 'click', loadFileHandler);
+            } else {
+                loadFileBtn.addEventListener('click', loadFileHandler);
+            }
         } else {
             console.error('Load file button not found!');
         }
@@ -1038,31 +1023,50 @@ class PromptSpecApp {
                     }
             });
         }
-        
-        // Settings
+    }
+    
+    // Setup settings and other button listeners
+    _setupSettingsAndOtherListeners() {
+        // Settings button
         const settingsBtn = document.getElementById('settings-btn');
+        console.log('Setting up settings button:', { settingsBtn, app: this });
         if (settingsBtn) {
-            settingsBtn.addEventListener('click', () => {
+            const clickHandler = () => {
+                console.log('Settings button clicked');
                 this.showSettingsModal();
-            });
+            };
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(settingsBtn, 'click', clickHandler);
+            } else {
+                settingsBtn.addEventListener('click', clickHandler);
+            }
         }
         
-        // Settings modal handlers
-        const settingsClose = document.getElementById('settings-close');
-        if (settingsClose) {
-            settingsClose.addEventListener('click', () => {
-                this.modalSystem.closeSettingsModal();
-            });
-        }
+        // Settings modal close handler (using event delegation on modal element)
+        // Note: Close button handler is set up in ModalSystem.setupEventListeners()
+        // using event delegation, so we don't need to set it up here
         
         const settingsReset = document.getElementById('settings-reset');
         if (settingsReset) {
-            settingsReset.addEventListener('click', () => {
+            const clickHandler = () => {
                 const defaultSettings = this.stateManager.getDefaultSettings();
                 this.stateManager.updateSettings(defaultSettings);
                 this.showSettingsModal(); // Refresh
-            });
+            };
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(settingsReset, 'click', clickHandler);
+            } else {
+                settingsReset.addEventListener('click', clickHandler);
+            }
         }
+    }
+    
+    // Legacy setupUIListeners implementation (if needed for fallback)
+    _setupUIListeners() {
+        // Call file operation listeners
+        this._setupFileOperationListeners();
+        // Call settings listeners
+        this._setupSettingsAndOtherListeners();
         
         // New project button
         const newProjectBtn = document.getElementById('new-project-btn');
@@ -2892,11 +2896,10 @@ class PromptSpecApp {
     }
     
     // Show settings modal with content
-    // Show settings modal - delegates to UIManager
+    // Show settings modal - populates content then opens modal
     showSettingsModal() {
-        if (this.uiManager) {
-            return this.uiManager.showSettingsModal();
-        }
+        // Populate settings content first, then open modal
+        this._showSettingsModal();
     }
     
     // Legacy showSettingsModal implementation (if needed for fallback)
@@ -5013,12 +5016,15 @@ class PromptSpecApp {
             const response = await fetch('/api/list-files');
             const result = await response.json();
             
-            if (result.success && result.files && result.files.length > 0) {
+            // Server wraps response in { success: true, data: { success: true, files: [...] } }
+            const files = (result.data && result.data.files) || result.files || [];
+            
+            if (result.success && files && files.length > 0) {
                 // Clear existing options
                 projectGroupSelect.innerHTML = ''; // Clearing - safe
                 
                 // Add file options
-                result.files.forEach(file => {
+                files.forEach(file => {
                     const option = document.createElement('option');
                     option.value = file.name;
                     // Display name without .json extension
@@ -6291,9 +6297,12 @@ class PromptSpecApp {
                 const response = await fetch('/api/list-files');
                 const result = await response.json();
                 
-                if (result.success && result.files && result.files.length > 0) {
+                // Server wraps response in { success: true, data: { success: true, files: [...] } }
+                const files = (result.data && result.data.files) || result.files || [];
+                
+                if (result.success && files && files.length > 0) {
                     // file.name is from server - escape for safety
-                    const filesHtml = result.files.map(file => {
+                    const filesHtml = files.map(file => {
                         const date = new Date(file.modified);
                         const sizeKB = (file.size / 1024).toFixed(2);
                         const escapedName = this.escapeHtml(file.name);

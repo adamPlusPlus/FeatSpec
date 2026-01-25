@@ -78,7 +78,11 @@ class InitializationManager {
             this.restoreLastActiveProject();
             
             // Setup UI event listeners
-            if (this.managers.uiManager) {
+            // Call app's setupUIListeners which sets up both UIManager and app-specific handlers
+            if (this.appInstance && typeof this.appInstance.setupUIListeners === 'function') {
+                this.appInstance.setupUIListeners();
+            } else if (this.managers.uiManager) {
+                // Fallback to just UIManager if app method not available
                 this.managers.uiManager.setupUIListeners();
             }
             
@@ -96,6 +100,13 @@ class InitializationManager {
                 }
             } catch (error) {
                 console.warn('Failed to load prompts/references:', error);
+            }
+            
+            // Apply settings to DOM (ensure color palette is correct)
+            const state = this.stateManager.getState();
+            const settings = state.settings || this.stateManager.getDefaultSettings();
+            if (this.appInstance && this.appInstance.stateUpdateHelper) {
+                this.appInstance.stateUpdateHelper.applySettingsToDOM(settings);
             }
             
             // Initial render

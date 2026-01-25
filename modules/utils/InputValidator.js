@@ -6,7 +6,7 @@
  * @param {string} name - Project name to validate
  * @returns {{valid: boolean, error?: string, sanitized?: string}}
  */
-export function validateProjectName(name) {
+function validateProjectName(name) {
     if (!name || typeof name !== 'string') {
         return { valid: false, error: 'Project name is required' };
     }
@@ -36,7 +36,7 @@ export function validateProjectName(name) {
  * @param {string} name - Section name to validate
  * @returns {{valid: boolean, error?: string, sanitized?: string}}
  */
-export function validateSectionName(name) {
+function validateSectionName(name) {
     if (!name || typeof name !== 'string') {
         return { valid: false, error: 'Section name is required' };
     }
@@ -65,7 +65,7 @@ export function validateSectionName(name) {
  * @param {string} filename - Filename to validate
  * @returns {{valid: boolean, error?: string, sanitized?: string}}
  */
-export function validateFilename(filename) {
+function validateFilename(filename) {
     if (!filename || typeof filename !== 'string') {
         return { valid: false, error: 'Filename is required' };
     }
@@ -109,7 +109,7 @@ export function validateFilename(filename) {
  * @param {string} inputPath - Path to validate
  * @returns {{valid: boolean, error?: string}}
  */
-export function validatePath(inputPath) {
+function validatePath(inputPath) {
     if (!inputPath || typeof inputPath !== 'string') {
         return { valid: false, error: 'Path is required' };
     }
@@ -140,7 +140,7 @@ export function validatePath(inputPath) {
  * @param {string} id - Automation ID to validate
  * @returns {{valid: boolean, error?: string, sanitized?: string}}
  */
-export function validateAutomationId(id) {
+function validateAutomationId(id) {
     if (!id || typeof id !== 'string') {
         return { valid: true, sanitized: '' }; // Automation ID is optional
     }
@@ -166,7 +166,7 @@ export function validateAutomationId(id) {
  * @param {string} type - Input type ('text', 'filename', 'path', 'id')
  * @returns {string} Sanitized input
  */
-export function sanitizeUserInput(input, type = 'text') {
+function sanitizeUserInput(input, type = 'text') {
     if (typeof input !== 'string') return '';
     
     switch (type) {

@@ -106,34 +106,56 @@ class StateUpdateHelper {
     applySettingsToDOM(settings, path = null, value = null) {
         const root = document.documentElement;
         
-        // Apply CSS custom properties
-        root.style.setProperty('--bg-color', settings.background);
-        root.style.setProperty('--page-bg', (settings.page && settings.page.background) || '#2d2d2d');
-        root.style.setProperty('--page-margin', (settings.page && settings.page.margin) || '0px');
-        root.style.setProperty('--page-padding', (settings.page && settings.page.padding) || '20px');
-        root.style.setProperty('--page-border-radius', (settings.page && settings.page.borderRadius) || '8px');
-        root.style.setProperty('--page-font-family', (settings.page && settings.page.fontFamily) || '-apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif');
-        root.style.setProperty('--page-font-size', (settings.page && settings.page.fontSize) || '14px');
-        root.style.setProperty('--page-opacity', (settings.page && settings.page.opacity) || '1');
-        root.style.setProperty('--page-color', (settings.page && settings.page.color) || '#e0e0e0');
-        root.style.setProperty('--page-title-font-size', (settings.page && settings.page.titleFontSize) || '18px');
-        root.style.setProperty('--page-title-color', (settings.page && settings.page.titleColor) || '#ffffff');
-        root.style.setProperty('--page-title-margin-bottom', (settings.page && settings.page.titleMarginBottom) || '15px');
-        root.style.setProperty('--element-bg', (settings.element && settings.element.bg) || 'transparent');
-        root.style.setProperty('--element-margin', (settings.element && settings.element.margin) || '0px');
-        root.style.setProperty('--element-padding', (settings.element && settings.element.padding) || '10px');
-        root.style.setProperty('--element-font-family', (settings.element && settings.element.fontFamily) || '-apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif');
-        root.style.setProperty('--element-font-size', (settings.element && settings.element.fontSize) || '14px');
-        root.style.setProperty('--element-opacity', (settings.element && settings.element.opacity) || '1');
-        root.style.setProperty('--element-color', (settings.element && settings.element.color) || '#e0e0e0');
-        root.style.setProperty('--element-hover-bg', (settings.element && settings.element.hoverBg) || '#363636');
-        root.style.setProperty('--header-font-size', (settings.header && settings.header.fontSize) || '16px');
-        root.style.setProperty('--header-color', (settings.header && settings.header.color) || '#b8b8b8');
-        root.style.setProperty('--header-margin', (settings.header && settings.header.margin) || '10px 0');
-        root.style.setProperty('--header-padding', (settings.header && settings.header.padding) || '5px 0');
-        root.style.setProperty('--header-font-weight', (settings.header && settings.header.fontWeight) || '600');
-        root.style.setProperty('--checkbox-size', (settings.checkbox && settings.checkbox.size) || '18px');
-        root.style.setProperty('--checkbox-color', (settings.checkbox && settings.checkbox.color) || '#4CAF50');
+        // Merge with defaults to ensure all values are valid
+        const defaults = this.stateManager.getDefaultSettings();
+        const mergedSettings = {
+            background: settings.background || defaults.background,
+            page: {
+                ...defaults.page,
+                ...(settings.page || {})
+            },
+            element: {
+                ...defaults.element,
+                ...(settings.element || {})
+            },
+            header: {
+                ...defaults.header,
+                ...(settings.header || {})
+            },
+            checkbox: {
+                ...(defaults.checkbox || {}),
+                ...(settings.checkbox || {})
+            }
+        };
+        
+        // Apply CSS custom properties with merged/validated values
+        root.style.setProperty('--bg-color', mergedSettings.background);
+        root.style.setProperty('--page-bg', mergedSettings.page.background);
+        root.style.setProperty('--page-margin', mergedSettings.page.margin);
+        root.style.setProperty('--page-padding', mergedSettings.page.padding);
+        root.style.setProperty('--page-border-radius', mergedSettings.page.borderRadius);
+        root.style.setProperty('--page-font-family', mergedSettings.page.fontFamily);
+        root.style.setProperty('--page-font-size', mergedSettings.page.fontSize);
+        root.style.setProperty('--page-opacity', mergedSettings.page.opacity);
+        root.style.setProperty('--page-color', mergedSettings.page.color);
+        root.style.setProperty('--page-title-font-size', mergedSettings.page.titleFontSize);
+        root.style.setProperty('--page-title-color', mergedSettings.page.titleColor);
+        root.style.setProperty('--page-title-margin-bottom', mergedSettings.page.titleMarginBottom);
+        root.style.setProperty('--element-bg', mergedSettings.element.bg);
+        root.style.setProperty('--element-margin', mergedSettings.element.margin);
+        root.style.setProperty('--element-padding', mergedSettings.element.padding);
+        root.style.setProperty('--element-font-family', mergedSettings.element.fontFamily);
+        root.style.setProperty('--element-font-size', mergedSettings.element.fontSize);
+        root.style.setProperty('--element-opacity', mergedSettings.element.opacity);
+        root.style.setProperty('--element-color', mergedSettings.element.color);
+        root.style.setProperty('--element-hover-bg', mergedSettings.element.hoverBg);
+        root.style.setProperty('--header-font-size', mergedSettings.header.fontSize);
+        root.style.setProperty('--header-color', mergedSettings.header.color);
+        root.style.setProperty('--header-margin', mergedSettings.header.margin);
+        root.style.setProperty('--header-padding', mergedSettings.header.padding || '5px 0');
+        root.style.setProperty('--header-font-weight', mergedSettings.header.fontWeight || '600');
+        root.style.setProperty('--checkbox-size', mergedSettings.checkbox?.size || '18px');
+        root.style.setProperty('--checkbox-color', mergedSettings.checkbox?.color || '#4CAF50');
         
         // Sync form inputs if path and value provided (from app.js updateSetting logic)
         if (path && value !== null) {

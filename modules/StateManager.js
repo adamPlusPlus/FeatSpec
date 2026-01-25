@@ -695,9 +695,33 @@ class StateManager {
             });
         }
         
+        // Ensure settings are valid - merge with defaults if needed
+        const defaultSettings = this.getDefaultSettings();
+        const loadedSettings = state.settings || {};
+        const mergedSettings = {
+            background: loadedSettings.background || defaultSettings.background,
+            page: {
+                ...defaultSettings.page,
+                ...(loadedSettings.page || {})
+            },
+            element: {
+                ...defaultSettings.element,
+                ...(loadedSettings.element || {})
+            },
+            header: {
+                ...defaultSettings.header,
+                ...(loadedSettings.header || {})
+            },
+            checkbox: {
+                ...(defaultSettings.checkbox || {}),
+                ...(loadedSettings.checkbox || {})
+            }
+        };
+        
         this.state = {
             ...this.createInitialState(),
             ...state,
+            settings: mergedSettings, // Use merged settings to ensure valid values
             metadata: {
                 ...this.createInitialState().metadata,
                 ...(state.metadata || {}),

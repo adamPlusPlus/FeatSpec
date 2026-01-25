@@ -151,6 +151,242 @@ class UIManager {
                 document.removeEventListener('click', documentClickHandler);
             });
         }
+        
+        // Dropdown toggle
+        this.setupDropdownListeners();
+        
+        // Pane toggle buttons
+        this.setupPaneToggleListeners();
+    }
+    
+    /**
+     * Setup dropdown toggle listeners
+     */
+    setupDropdownListeners() {
+        const dropdownToggle = document.querySelector('.dropdown-toggle');
+        const dropdownMenu = document.querySelector('.dropdown-menu');
+        console.log('Setting up dropdown listeners:', { dropdownToggle, dropdownMenu });
+        if (dropdownToggle && dropdownMenu) {
+            const toggleClickHandler = (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                console.log('Dropdown toggle clicked');
+                const isActive = dropdownMenu.classList.toggle('active');
+                dropdownToggle.classList.toggle('active', isActive);
+                console.log('Dropdown state:', { isActive, hasActive: dropdownMenu.classList.contains('active') });
+            };
+            
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(dropdownToggle, 'click', toggleClickHandler);
+            } else {
+                dropdownToggle.addEventListener('click', toggleClickHandler);
+                this.eventListenerCleanups.push(() => {
+                    dropdownToggle.removeEventListener('click', toggleClickHandler);
+                });
+            }
+            
+            // Close dropdown when clicking outside
+            const outsideClickHandler = (e) => {
+                if (!e.target.closest('.dropdown')) {
+                    dropdownMenu.classList.remove('active');
+                    dropdownToggle.classList.remove('active');
+                }
+            };
+            
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(document, 'click', outsideClickHandler);
+            } else {
+                document.addEventListener('click', outsideClickHandler);
+                this.eventListenerCleanups.push(() => {
+                    document.removeEventListener('click', outsideClickHandler);
+                });
+            }
+            
+            // Close dropdown when clicking on menu items (except file operations)
+            const menuItemClickHandler = (e) => {
+                const button = e.target.closest('button');
+                if (button) {
+                    const buttonId = button.id;
+                    // Don't auto-close for file operations - they handle their own cleanup
+                    if (buttonId !== 'save-file' && buttonId !== 'load-file') {
+                        dropdownMenu.classList.remove('active');
+                        dropdownToggle.classList.remove('active');
+                    }
+                }
+            };
+            
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(dropdownMenu, 'click', menuItemClickHandler);
+            } else {
+                dropdownMenu.addEventListener('click', menuItemClickHandler);
+                this.eventListenerCleanups.push(() => {
+                    dropdownMenu.removeEventListener('click', menuItemClickHandler);
+                });
+            }
+        }
+    }
+    
+    /**
+     * Setup pane toggle listeners
+     */
+    setupPaneToggleListeners() {
+        // Projects sidebar toggle
+        const toggleProjectsSidebar = document.getElementById('toggle-projects-sidebar');
+        const toggleProjectsSidebarCollapsed = document.getElementById('toggle-projects-sidebar-collapsed');
+        if (toggleProjectsSidebar) {
+            const clickHandler = () => {
+                const isExpanded = this.stateManager.togglePaneState('projectsSidebar');
+                this.updatePaneVisibility('projectsSidebar', isExpanded);
+            };
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(toggleProjectsSidebar, 'click', clickHandler);
+            } else {
+                toggleProjectsSidebar.addEventListener('click', clickHandler);
+                this.eventListenerCleanups.push(() => {
+                    toggleProjectsSidebar.removeEventListener('click', clickHandler);
+                });
+            }
+        }
+        if (toggleProjectsSidebarCollapsed) {
+            const clickHandler = () => {
+                const isExpanded = this.stateManager.togglePaneState('projectsSidebar');
+                this.updatePaneVisibility('projectsSidebar', isExpanded);
+            };
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(toggleProjectsSidebarCollapsed, 'click', clickHandler);
+            } else {
+                toggleProjectsSidebarCollapsed.addEventListener('click', clickHandler);
+                this.eventListenerCleanups.push(() => {
+                    toggleProjectsSidebarCollapsed.removeEventListener('click', clickHandler);
+                });
+            }
+        }
+        
+        // Top bar toggle
+        const toggleTopBar = document.getElementById('toggle-top-bar');
+        const toggleTopBarCollapsed = document.getElementById('toggle-top-bar-collapsed');
+        if (toggleTopBar) {
+            const clickHandler = () => {
+                const isExpanded = this.stateManager.togglePaneState('topBar');
+                this.updatePaneVisibility('topBar', isExpanded);
+            };
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(toggleTopBar, 'click', clickHandler);
+            } else {
+                toggleTopBar.addEventListener('click', clickHandler);
+                this.eventListenerCleanups.push(() => {
+                    toggleTopBar.removeEventListener('click', clickHandler);
+                });
+            }
+        }
+        if (toggleTopBarCollapsed) {
+            const clickHandler = () => {
+                const isExpanded = this.stateManager.togglePaneState('topBar');
+                this.updatePaneVisibility('topBar', isExpanded);
+            };
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(toggleTopBarCollapsed, 'click', clickHandler);
+            } else {
+                toggleTopBarCollapsed.addEventListener('click', clickHandler);
+                this.eventListenerCleanups.push(() => {
+                    toggleTopBarCollapsed.removeEventListener('click', clickHandler);
+                });
+            }
+        }
+        
+        // References panel toggle
+        const toggleReferencesPanel = document.getElementById('toggle-references-panel');
+        const toggleReferencesPanelCollapsed = document.getElementById('toggle-references-panel-collapsed');
+        if (toggleReferencesPanel) {
+            const clickHandler = () => {
+                const isExpanded = this.stateManager.togglePaneState('referencesPanel');
+                this.updatePaneVisibility('referencesPanel', isExpanded);
+            };
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(toggleReferencesPanel, 'click', clickHandler);
+            } else {
+                toggleReferencesPanel.addEventListener('click', clickHandler);
+                this.eventListenerCleanups.push(() => {
+                    toggleReferencesPanel.removeEventListener('click', clickHandler);
+                });
+            }
+        }
+        if (toggleReferencesPanelCollapsed) {
+            const clickHandler = () => {
+                const isExpanded = this.stateManager.togglePaneState('referencesPanel');
+                this.updatePaneVisibility('referencesPanel', isExpanded);
+            };
+            if (typeof window !== 'undefined' && window.eventListenerManager) {
+                window.eventListenerManager.add(toggleReferencesPanelCollapsed, 'click', clickHandler);
+            } else {
+                toggleReferencesPanelCollapsed.addEventListener('click', clickHandler);
+                this.eventListenerCleanups.push(() => {
+                    toggleReferencesPanelCollapsed.removeEventListener('click', clickHandler);
+                });
+            }
+        }
+    }
+    
+    /**
+     * Update pane visibility
+     */
+    updatePaneVisibility(paneName, isExpanded) {
+        // Get pane elements
+        let paneElement = null;
+        let toggleBtn = null;
+        let collapsedToggleBtn = null;
+        
+        if (paneName === 'projectsSidebar') {
+            paneElement = document.getElementById('projects-sidebar');
+            toggleBtn = document.getElementById('toggle-projects-sidebar');
+            collapsedToggleBtn = document.getElementById('toggle-projects-sidebar-collapsed');
+        } else if (paneName === 'topBar') {
+            paneElement = document.getElementById('top-bar');
+            toggleBtn = document.getElementById('toggle-top-bar');
+            collapsedToggleBtn = document.getElementById('toggle-top-bar-collapsed');
+        } else if (paneName === 'referencesPanel') {
+            paneElement = document.getElementById('references-panel');
+            toggleBtn = document.getElementById('toggle-references-panel');
+            collapsedToggleBtn = document.getElementById('toggle-references-panel-collapsed');
+        }
+        
+        if (paneElement) {
+            if (isExpanded) {
+                paneElement.classList.remove('collapsed');
+                if (toggleBtn) {
+                    if (paneName === 'topBar') {
+                        toggleBtn.textContent = '▼';
+                        toggleBtn.title = 'Collapse Top Bar';
+                    } else if (paneName === 'projectsSidebar') {
+                        toggleBtn.textContent = '◀';
+                        toggleBtn.title = 'Collapse Sidebar';
+                    } else if (paneName === 'referencesPanel') {
+                        toggleBtn.textContent = '▶';
+                        toggleBtn.title = 'Collapse References Panel';
+                    }
+                }
+                if (collapsedToggleBtn) {
+                    collapsedToggleBtn.style.display = 'none';
+                }
+            } else {
+                paneElement.classList.add('collapsed');
+                if (toggleBtn) {
+                    if (paneName === 'topBar') {
+                        toggleBtn.textContent = '▲';
+                        toggleBtn.title = 'Expand Top Bar';
+                    } else if (paneName === 'projectsSidebar') {
+                        toggleBtn.textContent = '▶';
+                        toggleBtn.title = 'Expand Sidebar';
+                    } else if (paneName === 'referencesPanel') {
+                        toggleBtn.textContent = '◀';
+                        toggleBtn.title = 'Expand References Panel';
+                    }
+                }
+                if (collapsedToggleBtn) {
+                    collapsedToggleBtn.style.display = 'block';
+                }
+            }
+        }
     }
     
     /**
@@ -411,7 +647,12 @@ class UIManager {
      * Show settings modal
      */
     showSettingsModal() {
-        this.modalSystem.openSettingsModal();
+        console.log('UIManager.showSettingsModal called', { modalSystem: this.modalSystem });
+        if (this.modalSystem) {
+            this.modalSystem.openSettingsModal();
+        } else {
+            console.error('ModalSystem not available in UIManager');
+        }
     }
     
     /**

@@ -473,7 +473,10 @@ class AutomationSystem {
             }
             
             const result = await response.json();
-            if (!result.success || !result.files) {
+            // Server wraps response in { success: true, data: { success: true, files: [...] } }
+            const files = (result.data && result.data.files) || result.files || [];
+            
+            if (!result.success || !files || files.length === 0) {
                 // No files found or error - continue gracefully
                 if (result && result.error) {
                     console.warn(`No files found for ${sectionId}:`, result.error);
@@ -482,7 +485,7 @@ class AutomationSystem {
             }
             
             // Check if any complete files exist
-            for (const file of result.files) {
+            for (const file of files) {
                 const fileName = file.name;
                 
                 if (this._matchFilePattern(fileName, stepName, automationId, instructions)) {
@@ -1065,7 +1068,9 @@ class AutomationSystem {
         }
         
         // If directory doesn't exist or has no files, try parent automation directory
-        if (!response.ok || (result && (!result.success || result.error === 'Directory does not exist' || (result.files && result.files.length === 0)))) {
+        // /api/files returns { success: true, files: [...] } directly (not double-wrapped)
+        let files = (result && result.data && result.data.files) || (result && result.files) || [];
+        if (!response.ok || (result && (!result.success || result.error === 'Directory does not exist' || (files && files.length === 0)))) {
             console.log('Directory not found or empty, trying parent automation directory:', this.targetDirectory.path);
             normalizedWatchDir = this.targetDirectory.path;
             try {
@@ -1105,7 +1110,12 @@ class AutomationSystem {
             return { changedFiles, newCompleteFiles };
         }
         
-        if (!result || !result.success || !result.files) {
+        // /api/files returns { success: true, files: [...] } directly (not double-wrapped)
+        // /api/list-files returns { success: true, data: { success: true, files: [...] } }
+        // Recalculate files after potential parent directory check (result may have been updated)
+        files = (result && result.data && result.data.files) || (result && result.files) || [];
+        
+        if (!result || !result.success || !files || files.length === 0) {
             if (this.errorHandler) {
                 this.errorHandler.handleError(result?.error || 'Unknown error', {
                     source: 'AutomationSystem',
@@ -1121,7 +1131,7 @@ class AutomationSystem {
         
         const automationId = section?.automationId || '';
         
-        for (const file of result.files) {
+        for (const file of files) {
             const fileName = file.name;
             const matchesPattern = this._matchesFilePattern(fileName, instructions);
             const isCompleteFile = this._determineIfCompleteFile(fileName, stepName, automationId, instructions);

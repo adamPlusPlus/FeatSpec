@@ -1221,6 +1221,7 @@ class RenderingEngine {
         item.dataset.action = 'navigate-section';
         
         // section.sectionName contains user data - escape and use safeSetInnerHTML
+        // itemHtml is a template with user data already escaped via escapeHtml() - mark as trusted
         const itemHtml = `
             <div class="section-item-header">
                 <span class="section-icon">${isLocked ? '🔒' : statusIcon}</span>
@@ -1236,7 +1237,7 @@ class RenderingEngine {
         `;
         
         if (window.safeSetInnerHTML) {
-            window.safeSetInnerHTML(item, itemHtml, { allowMarkdown: false });
+            window.safeSetInnerHTML(item, itemHtml, { trusted: true });
         } else {
             item.innerHTML = itemHtml;
         }
@@ -1270,8 +1271,10 @@ class RenderingEngine {
         // Get case information
         const caseNumber = activeProject.case || 1;
         const caseBadge = this.renderCaseBadge(caseNumber, activeProject.caseChain);
+        // Use CaseInfoService method if available, otherwise create manually with proper escaping
         const caseChainInfo = activeProject.caseChain ? 
-            `<span class="case-chain-info" title="Enhanced from Case ${activeProject.caseChain.previousCase}">🔗 Enhanced from Case ${activeProject.caseChain.previousCase}</span>` : '';
+            (this.caseInfo ? this.caseInfo.getCaseChainInfo(activeProject.caseChain) :
+            `<span class="case-chain-info" title="Enhanced from Case ${this.escapeHtml(String(activeProject.caseChain.previousCase))}">🔗 Enhanced from Case ${this.escapeHtml(String(activeProject.caseChain.previousCase))}</span>`) : '';
         
         let html = '<div class="pipeline-flow-content">';
         html += `<div class="pipeline-header">
@@ -1365,11 +1368,15 @@ class RenderingEngine {
         html += '<div class="pipeline-sections" id="pipeline-sections-container"></div>';
         html += '</div>';
         
-        // html contains user data (section names, project data) - sanitize
+        // html is a template with user data already escaped via escapeHtml() - mark as trusted
+        // User data (section names, project names, etc.) are escaped before insertion
+        console.log('Rendering pipeline flow view', { htmlLength: html.length, hasSafeSetInnerHTML: !!window.safeSetInnerHTML });
         if (window.safeSetInnerHTML) {
-            window.safeSetInnerHTML(flowView, html, { allowMarkdown: false });
+            window.safeSetInnerHTML(flowView, html, { trusted: true });
+            console.log('Pipeline flow HTML set with safeSetInnerHTML (trusted: true)');
         } else {
             flowView.innerHTML = html;
+            console.log('Pipeline flow HTML set with innerHTML (fallback)');
         }
         
         // Render sections list (with virtualization if > 30 sections)

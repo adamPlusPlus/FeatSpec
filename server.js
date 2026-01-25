@@ -260,14 +260,11 @@ function saveFileToServer(filename, content) {
         const safeFilename = trimmed.replace(/[^a-zA-Z0-9._-]/g, '_');
         const filePath = path.join(SAVED_FILES_DIR, safeFilename);
         
-        // Validate content size
+        // Validate content size and ensure content is a string
         const contentString = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
         if (contentString.length > SERVER_VALIDATION.MAX_FILE_SIZE) {
             return { success: false, error: 'File size exceeds maximum allowed size' };
         }
-        
-        // Ensure content is a string
-        const contentString = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
         
         fs.writeFileSync(filePath, contentString, 'utf8');
         return { success: true, filename: safeFilename, path: filePath };

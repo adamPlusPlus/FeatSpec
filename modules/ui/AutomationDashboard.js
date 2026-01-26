@@ -29,7 +29,6 @@ class AutomationDashboard {
         return `
             <div class="automation-dashboard">
                 <div class="dashboard-header">
-                    <h2>Automation Dashboard</h2>
                     <div class="dashboard-actions">
                         <button class="dashboard-btn" id="dashboard-refresh" title="Refresh">🔄</button>
                         <button class="dashboard-btn" id="dashboard-export" title="Export Report">📥</button>

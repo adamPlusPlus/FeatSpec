@@ -3337,10 +3337,50 @@ header h1 {
 /* Automation Dashboard Styles */
 .automation-dashboard-container {
     margin: 20px;
-    padding: 20px;
     background: #1a1a1a;
     border-radius: 8px;
     border: 1px solid #404040;
+    overflow: hidden;
+}
+
+.automation-dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    background: #2d2d2d;
+    cursor: pointer;
+    transition: background 0.2s;
+    user-select: none;
+}
+
+.automation-dashboard-header:hover {
+    background: #353535;
+}
+
+.automation-dashboard-title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 500;
+    color: #e0e0e0;
+}
+
+.automation-dashboard-toggle {
+    font-size: 14px;
+    color: #888;
+    transition: transform 0.2s;
+}
+
+.automation-dashboard-content {
+    padding: 20px;
+    transition: max-height 0.3s ease-out, padding 0.3s ease-out;
+    overflow: hidden;
+}
+
+.automation-dashboard-content.collapsed {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
 }
 
 .automation-dashboard {

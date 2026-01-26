@@ -1302,6 +1302,38 @@ class RenderingEngine {
         }
     }
     
+    _renderDependencyGraphPanel(project, section) {
+        if (!project || !section || typeof window === 'undefined' || !window.DependencyGraph) {
+            return '';
+        }
+        
+        try {
+            const dependencyGraph = new window.DependencyGraph(this.stateManager, this.sectionManager);
+            const fullGraphHtml = dependencyGraph.renderFullGraph(project, section.sectionId);
+            
+            const panelId = `dependency-graph-panel-${project.id}`;
+            return `
+                <div class="dependency-graph-panel" id="${panelId}" data-project-id="${project.id}">
+                    <div class="dependency-graph-panel-header" onclick="this.nextElementSibling.classList.toggle('collapsed'); this.querySelector('.dependency-graph-toggle').textContent = this.nextElementSibling.classList.contains('collapsed') ? '▶' : '▼';">
+                        <h3 class="dependency-graph-panel-title">Dependency Graph</h3>
+                        <span class="dependency-graph-toggle">▼</span>
+                    </div>
+                    <div class="dependency-graph-panel-content" id="dependency-graph-content-${project.id}">
+                        ${fullGraphHtml}
+                    </div>
+                </div>
+            `;
+        } catch (error) {
+            if (this.errorHandler) {
+                this.errorHandler.logError(error, {
+                    source: 'RenderingEngine',
+                    operation: '_renderDependencyGraphPanel'
+                });
+            }
+            return '';
+        }
+    }
+    
     _renderSectionHeader(data, project, section) {
         return `
             <div class="section-case-header">
@@ -1488,12 +1520,19 @@ class RenderingEngine {
         const data = await this._prepareSectionContentData(project, section);
         
         // Build HTML from template sections
+        let dependencyGraphPanelHtml = '';
+        try {
+            dependencyGraphPanelHtml = this._renderDependencyGraphPanel(project, section);
+        } catch (error) {
+            dependencyGraphPanelHtml = '';
+        }
+        
         return `
             <div class="section-view-content">
                 ${this._renderSectionNavigationBar(project, section)}
                 ${this._renderSectionHeader(data, project, section)}
                 ${this._renderSectionLockedMessage(data, project)}
-                ${this._renderDependencyGraphPanel(project, section)}
+                ${dependencyGraphPanelHtml}
                 ${this._renderInferenceStepIndicator(section)}
                 ${this._renderModifiersSection(section, project)}
                 ${this._renderSectionPanels(project, section)}
@@ -1637,10 +1676,18 @@ class RenderingEngine {
             </div>
         </div>`;
         
-        // Add automation dashboard
-        html += `<div id="automation-dashboard-container" class="automation-dashboard-container">
-            ${this.renderAutomationDashboard(activeProject)}
-        </div>`;
+        // Add automation dashboard (collapsible, collapsed by default)
+        html += `
+            <div id="automation-dashboard-container" class="automation-dashboard-container">
+                <div class="automation-dashboard-header" onclick="this.nextElementSibling.classList.toggle('collapsed'); this.querySelector('.automation-dashboard-toggle').textContent = this.nextElementSibling.classList.contains('collapsed') ? '▶' : '▼';">
+                    <h3 class="automation-dashboard-title">Automation Dashboard</h3>
+                    <span class="automation-dashboard-toggle">▶</span>
+                </div>
+                <div class="automation-dashboard-content collapsed">
+                    ${this.renderAutomationDashboard(activeProject)}
+                </div>
+            </div>
+        `;
         
         // Automation directory input - ensure it always has a value with unique ID
         let automationDir = activeProject.automationDirectory || '';

@@ -1,0 +1,28 @@
+Fix missing _renderDependencyGraphPanel method and make automation dashboard collapsible
+
+## Summary
+Fixed rendering error for dependency graph panel and improved UX by making automation dashboard collapsible.
+
+## Changes
+
+### Bug Fix
+- Added missing `_renderDependencyGraphPanel` method to RenderingEngine.js
+- Method renders expandable dependency graph panel in section views
+- Includes proper error handling and DependencyGraph integration
+
+### UX Improvement
+- Made automation dashboard collapsible in Pipeline Flow view
+- Dashboard is collapsed by default to reduce visual clutter
+- Added smooth transition animations for expand/collapse
+- Toggle button shows ▶ when collapsed, ▼ when expanded
+
+## Files Modified
+- `modules/RenderingEngine.js` - Added _renderDependencyGraphPanel method, made dashboard collapsible
+- `modules/ui/AutomationDashboard.js` - Removed duplicate header title
+- `app.css` - Added styles for collapsible dashboard header and content
+
+## Technical Details
+- Dependency graph panel uses DependencyGraph class to render full graph
+- Click handlers are automatically set up for graph navigation
+- Dashboard collapse state managed via CSS class toggle
+- Header click handler toggles collapsed class and updates toggle icon

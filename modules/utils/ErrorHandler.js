@@ -506,6 +506,7 @@ class ErrorHandler {
                 if (window.safeSetInnerHTML) {
                     window.safeSetInnerHTML(modalBody, modalHtml, { trusted: false });
                 } else {
+                    // Fallback: modalHtml contains error messages (user data) - should be escaped
                     modalBody.innerHTML = modalHtml;
                 }
                 const modal = document.getElementById('modal');

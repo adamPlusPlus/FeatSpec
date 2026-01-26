@@ -9,6 +9,8 @@ const { promisify } = require('util');
 const execPromise = promisify(exec);
 const PathService = require('./server/utils/PathService');
 const ServerErrorHandler = require('./server/utils/ServerErrorHandler');
+const RateLimiter = require('./server/utils/RateLimiter');
+const SchemaValidator = require('./server/utils/SchemaValidator');
 
 const PORT = process.env.PORT || 8050;
 
@@ -16,6 +18,15 @@ const PORT = process.env.PORT || 8050;
 const errorHandler = new ServerErrorHandler();
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const SAVED_FILES_DIR = path.join(__dirname, 'saved-files');
+
+// Initialize rate limiter (100 requests per minute per IP)
+const rateLimiter = new RateLimiter(100, 60000);
+
+// Initialize schema validator
+const schemaValidator = new SchemaValidator();
+
+// Cleanup rate limiter every minute
+setInterval(() => rateLimiter.cleanup(), 60000);
 
 // Server-side constants (matching client-side AppConstants)
 const SERVER_CONSTANTS = {
@@ -650,6 +661,27 @@ function loadFileFromServer(filename) {
         const content = fs.readFileSync(filePath, 'utf8');
         const stats = fs.statSync(filePath);
         
+        // Validate JSON content against schema
+        try {
+            const parsedData = JSON.parse(content);
+            const validation = schemaValidator.validateProjectGroup(parsedData);
+            
+            if (!validation.success) {
+                return {
+                    success: false,
+                    error: `Invalid file format: ${validation.message}`,
+                    code: 'VALIDATION_ERROR'
+                };
+            }
+        } catch (parseError) {
+            // If JSON parsing fails, return error
+            return {
+                success: false,
+                error: `Invalid JSON: ${parseError.message}`,
+                code: 'PARSE_ERROR'
+            };
+        }
+        
         return {
             success: true,
             filename: safeFilename,
@@ -1143,8 +1175,22 @@ const server = http.createServer((req, res) => {
     const pathname = url.pathname;
     console.log(`[${req.method}] ${pathname}`);
     
-    // API endpoints
+    // API endpoints - apply rate limiting
     if (pathname.startsWith('/api/')) {
+        // Apply rate limiting middleware
+        rateLimiter.middleware(req, res, () => {
+            // Continue with API handling
+            handleApiRequest(req, res, pathname);
+        });
+        return;
+    }
+    
+    // Non-API file serving
+    serveNonApiFiles(req, res, pathname);
+});
+
+// Handle API requests (extracted for rate limiting)
+function handleApiRequest(req, res, pathname) {
         // Handle GET requests for /api/list-files
         if (pathname === '/api/list-files' && req.method === 'GET') {
             const result = errorHandler.handleSync(() => listSavedFiles(), {
@@ -1385,8 +1431,10 @@ const server = http.createServer((req, res) => {
             res.end(JSON.stringify({ error: `Method not allowed: ${req.method}` }));
             return;
         }
-    }
-    
+}
+
+// Serve non-API files
+function serveNonApiFiles(req, res, pathname) {
     // Serve static files from feat-spec directory
     let filePath;
     
@@ -1435,7 +1483,7 @@ const server = http.createServer((req, res) => {
         }
         serveFile(filePath, res);
     });
-});
+}
 
 server.listen(PORT, () => {
     console.log(`Feat-spec server running at http://localhost:${PORT}/feat-spec`);

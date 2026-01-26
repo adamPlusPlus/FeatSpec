@@ -96,4 +96,91 @@ class NavigationService {
         
         return this.pipelineConfig.checkDependencies(sectionId, project.sections);
     }
+    
+    /**
+     * Get breadcrumb data for navigation
+     * @param {string} projectId - Project ID
+     * @param {string} sectionId - Current section ID
+     * @returns {Object} Breadcrumb data with project and section info
+     */
+    getBreadcrumbData(projectId, sectionId) {
+        const project = this.stateManager.getProject(projectId);
+        if (!project) {
+            return { project: null, section: null };
+        }
+        
+        const section = project.sections.find(s => s.sectionId === sectionId);
+        
+        return {
+            project: {
+                id: project.id,
+                name: project.name
+            },
+            section: section ? {
+                id: section.sectionId,
+                name: section.sectionName
+            } : null
+        };
+    }
+    
+    /**
+     * Calculate project progress
+     * @param {string} projectId - Project ID
+     * @returns {Object} Progress data with percentage, counts, and section details
+     */
+    calculateProgress(projectId) {
+        const project = this.stateManager.getProject(projectId);
+        if (!project || !project.sections || project.sections.length === 0) {
+            return {
+                percentage: 0,
+                completed: 0,
+                total: 0,
+                inProgress: 0,
+                notStarted: 0,
+                needsRevision: 0,
+                sections: []
+            };
+        }
+        
+        const sections = project.sections;
+        const total = sections.length;
+        let completed = 0;
+        let inProgress = 0;
+        let notStarted = 0;
+        let needsRevision = 0;
+        
+        const sectionDetails = sections.map(section => {
+            let status = 'not_started';
+            if (section.status === 'complete') {
+                status = 'complete';
+                completed++;
+            } else if (section.status === 'in_progress') {
+                status = 'in_progress';
+                inProgress++;
+            } else if (section.status === 'needs_revision') {
+                status = 'needs_revision';
+                needsRevision++;
+            } else {
+                notStarted++;
+            }
+            
+            return {
+                sectionId: section.sectionId,
+                sectionName: section.sectionName,
+                status: status
+            };
+        });
+        
+        const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+        
+        return {
+            percentage,
+            completed,
+            total,
+            inProgress,
+            notStarted,
+            needsRevision,
+            sections: sectionDetails
+        };
+    }
 }

@@ -689,7 +689,18 @@ class DataLayer {
     parseInputFile(content) {
         if (this.errorHandler) {
             const result = this.errorHandler.handleSync(() => {
-                return JSON.parse(content);
+                const parsed = JSON.parse(content);
+                
+                // Validate structure using ProjectGroupValidator if available
+                if (typeof window !== 'undefined' && window.ProjectGroupValidator) {
+                    const validator = new window.ProjectGroupValidator();
+                    const validation = validator.validateProjectGroup(parsed);
+                    if (!validation.success) {
+                        throw new Error(`Invalid file structure: ${validation.message}`);
+                    }
+                }
+                
+                return parsed;
             }, { source: 'DataLayer', operation: 'parseInputFile' });
             if (!result.success) {
                 throw new Error(`Invalid JSON format: ${result.error}`);
@@ -698,7 +709,18 @@ class DataLayer {
         } else {
             // Fallback to original error handling
             try {
-                return JSON.parse(content);
+                const parsed = JSON.parse(content);
+                
+                // Validate structure using ProjectGroupValidator if available
+                if (typeof window !== 'undefined' && window.ProjectGroupValidator) {
+                    const validator = new window.ProjectGroupValidator();
+                    const validation = validator.validateProjectGroup(parsed);
+                    if (!validation.success) {
+                        throw new Error(`Invalid file structure: ${validation.message}`);
+                    }
+                }
+                
+                return parsed;
             } catch (error) {
                 throw new Error(`Invalid JSON format: ${error.message}`);
             }

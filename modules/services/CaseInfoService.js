@@ -49,8 +49,10 @@ class CaseInfoService {
      * @private
      */
     escapeHtml(text) {
+        // This function returns HTML string, not setting innerHTML
+        // Create element, set textContent (escapes HTML), then return innerHTML
         const div = document.createElement('div');
         div.textContent = text;
-        return div.innerHTML;
+        return div.innerHTML; // Safe: textContent already escaped any HTML
     }
 }

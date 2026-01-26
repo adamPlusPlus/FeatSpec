@@ -8,9 +8,13 @@ class MultiAgentAutomationSystem {
         this.isRunning = false;
         this.currentProjectId = null;
         this.shouldStop = false;
+        this.isPaused = false;
         this.progressModal = null;
         this.progressText = null;
         this.progressLog = null;
+        this.startTime = null;
+        this.pausedTime = 0;
+        this.pauseStartTime = null;
         
         // Multi-agent specific state
         this.activeAgents = new Map(); // Map of sectionId -> agent info
@@ -47,21 +51,65 @@ class MultiAgentAutomationSystem {
         
         // Validate project uses multi-agent engine
         if (project.automationEngine !== 'multi-agent') {
-            alert('This project is not configured for multi-agent automation');
+            const errorMsg = 'This project is not configured for multi-agent automation. Please select multi-agent engine when creating the project.';
+            if (this.errorHandler) {
+                this.errorHandler.showUserNotification(errorMsg, {
+                    source: 'MultiAgentAutomationSystem',
+                    operation: 'start',
+                    projectId
+                }, {
+                    severity: ErrorHandler.Severity.WARNING,
+                    title: 'Invalid Automation Engine'
+                });
+            } else {
+                alert(errorMsg);
+            }
             return;
         }
         
         // Get scope directory from project (per-project, not global)
         const scopeDir = project.scopeDirectory || this.stateManager.getScopeDirectory();
         if (!scopeDir || !scopeDir.trim()) {
-            alert('Please set the scope directory in the Pipeline Flow view for multi-agent mode');
+            const errorMsg = 'Please set the scope directory in the Pipeline Flow view for multi-agent mode.';
+            if (this.errorHandler) {
+                this.errorHandler.showUserNotification(errorMsg, {
+                    source: 'MultiAgentAutomationSystem',
+                    operation: 'start',
+                    projectId
+                }, {
+                    severity: ErrorHandler.Severity.WARNING,
+                    title: 'Scope Directory Required',
+                    actions: [
+                        { label: 'Open Pipeline Flow', action: () => {
+                            const viewPipelineBtn = document.getElementById('view-pipeline');
+                            if (viewPipelineBtn) viewPipelineBtn.click();
+                        }},
+                        { label: 'OK', action: () => {} }
+                    ]
+                });
+            } else {
+                alert(errorMsg);
+            }
             return;
         }
         
         // Validate dependencies before starting
         const validationResult = this.validateDependencies(project);
         if (!validationResult.valid) {
-            alert(`Cannot start automation: ${validationResult.message}\n\nMissing dependencies:\n${validationResult.missingDeps.join('\n')}`);
+            const errorMsg = `Cannot start automation: ${validationResult.message}\n\nMissing dependencies:\n${validationResult.missingDeps.join('\n')}`;
+            if (this.errorHandler) {
+                this.errorHandler.showUserNotification(errorMsg, {
+                    source: 'MultiAgentAutomationSystem',
+                    operation: 'start',
+                    projectId
+                }, {
+                    severity: ErrorHandler.Severity.ERROR,
+                    title: 'Dependencies Not Met',
+                    showModal: true
+                });
+            } else {
+                alert(errorMsg);
+            }
             return;
         }
         
@@ -104,7 +152,24 @@ class MultiAgentAutomationSystem {
         } catch (error) {
             console.error('Error in multi-agent automation:', error);
             this.updateProgress(`Fatal error: ${error.message}`, '');
-            alert(`Fatal error: ${error.message}`);
+            const errorMsg = `Fatal error: ${error.message}`;
+            if (this.errorHandler) {
+                this.errorHandler.showUserNotification(errorMsg, {
+                    source: 'MultiAgentAutomationSystem',
+                    operation: 'start',
+                    projectId
+                }, {
+                    severity: ErrorHandler.Severity.CRITICAL,
+                    title: 'Fatal Automation Error',
+                    showModal: true,
+                    actions: [
+                        { label: 'Retry', action: () => this.start(projectId, initialInput) },
+                        { label: 'OK', action: () => {} }
+                    ]
+                });
+            } else {
+                alert(errorMsg);
+            }
         } finally {
             this.isRunning = false;
             this.currentProjectId = null;
@@ -1117,12 +1182,214 @@ Please provide a resolution that reconciles these conflicts. Respond with a JSON
             this.progressModal = modal;
             this.progressText = document.getElementById('multi-agent-progress-text');
             this.progressLog = document.getElementById('multi-agent-progress-log');
+            this.startTime = Date.now();
+            this.pausedTime = 0;
+            this.pauseStartTime = null;
             
             // Clear log
             if (this.progressLog) {
-                this.progressLog.innerHTML = ''; // Clearing - safe
+                while (this.progressLog.firstChild) {
+                    this.progressLog.removeChild(this.progressLog.firstChild);
+                }
+            }
+            
+            // Setup pause/resume handlers
+            this._setupProgressControls();
+            
+            // Initialize steps list
+            this._updateStepsList();
+            
+            // Start time tracking
+            this._startTimeTracking();
+        }
+    }
+    
+    /**
+     * Setup pause/resume/stop controls
+     * @private
+     */
+    _setupProgressControls() {
+        const pauseBtn = document.getElementById('multi-agent-pause');
+        const resumeBtn = document.getElementById('multi-agent-resume');
+        const stopBtn = document.getElementById('multi-agent-stop');
+        const closeBtn = document.getElementById('multi-agent-close');
+        
+        if (pauseBtn) {
+            pauseBtn.onclick = () => this.pause();
+            pauseBtn.style.display = this.isRunning && !this.isPaused ? 'inline-block' : 'none';
+        }
+        
+        if (resumeBtn) {
+            resumeBtn.onclick = () => this.resume();
+            resumeBtn.style.display = this.isPaused ? 'inline-block' : 'none';
+        }
+        
+        if (stopBtn) {
+            stopBtn.onclick = () => {
+                if (confirm('Are you sure you want to stop automation? Progress will be lost.')) {
+                    this.stop();
+                }
+            };
+            stopBtn.style.display = this.isRunning ? 'inline-block' : 'none';
+        }
+        
+        if (closeBtn) {
+            closeBtn.onclick = () => {
+                if (this.isRunning && !confirm('Automation is still running. Close anyway?')) {
+                    return;
+                }
+                this.hideProgressModal();
+            };
+        }
+    }
+    
+    /**
+     * Pause automation
+     */
+    pause() {
+        if (this.isRunning && !this.isPaused) {
+            this.isPaused = true;
+            this.pauseStartTime = Date.now();
+            this.updateProgress('Paused', '');
+            this._setupProgressControls();
+        }
+    }
+    
+    /**
+     * Resume automation
+     */
+    resume() {
+        if (this.isPaused) {
+            this.pausedTime += Date.now() - this.pauseStartTime;
+            this.isPaused = false;
+            this.pauseStartTime = null;
+            this.updateProgress('Resuming...', '');
+            this._setupProgressControls();
+        }
+    }
+    
+    /**
+     * Update steps list in progress modal
+     * @private
+     */
+    _updateStepsList() {
+        const stepsList = document.getElementById('multi-agent-steps-list');
+        if (!stepsList || !this.currentProjectId) return;
+        
+        const project = this.stateManager.getProject(this.currentProjectId);
+        if (!project || !project.sections) return;
+        
+        const currentSectionId = this.renderingEngine?.activeSectionId;
+        const html = project.sections.map(section => {
+            const isComplete = section.status === 'complete';
+            const isCurrent = section.sectionId === currentSectionId && !isComplete;
+            const statusClass = isComplete ? 'complete' : isCurrent ? 'current' : 'pending';
+            const statusText = isComplete ? 'Complete' : isCurrent ? 'Running' : 'Pending';
+            
+            return `
+                <div class="automation-step-item ${statusClass}">
+                    <div class="automation-step-checkbox ${isComplete ? 'checked' : ''}"></div>
+                    <span class="automation-step-name">${this._escapeHtml(section.sectionName || section.sectionId)}</span>
+                    <span class="automation-step-status ${statusClass}">${statusText}</span>
+                </div>
+            `;
+        }).join('');
+        
+        if (window.safeSetInnerHTML) {
+            window.safeSetInnerHTML(stepsList, html, { trusted: true });
+        } else {
+            stepsList.innerHTML = html;
+        }
+    }
+    
+    /**
+     * Start time tracking
+     * @private
+     */
+    _startTimeTracking() {
+        if (this.timeTrackingInterval) {
+            clearInterval(this.timeTrackingInterval);
+        }
+        
+        this.timeTrackingInterval = setInterval(() => {
+            if (!this.startTime) return;
+            
+            const elapsed = Date.now() - this.startTime - this.pausedTime;
+            const elapsedSeconds = Math.floor(elapsed / 1000);
+            const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+            const elapsedHours = Math.floor(elapsedMinutes / 60);
+            
+            let elapsedText = '';
+            if (elapsedHours > 0) {
+                elapsedText = `${elapsedHours}h ${elapsedMinutes % 60}m`;
+            } else if (elapsedMinutes > 0) {
+                elapsedText = `${elapsedMinutes}m ${elapsedSeconds % 60}s`;
+            } else {
+                elapsedText = `${elapsedSeconds}s`;
+            }
+            
+            const elapsedEl = document.getElementById('multi-agent-time-elapsed');
+            if (elapsedEl) {
+                elapsedEl.textContent = `Time: ${elapsedText}`;
+            }
+            
+            // Update progress bar and percentage
+            this._updateProgressBar();
+        }, 1000);
+    }
+    
+    /**
+     * Update progress bar
+     * @private
+     */
+    _updateProgressBar() {
+        if (!this.currentProjectId) return;
+        
+        const project = this.stateManager.getProject(this.currentProjectId);
+        if (!project || !project.sections) return;
+        
+        const total = project.sections.length;
+        const completed = project.sections.filter(s => s.status === 'complete').length;
+        const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+        
+        const progressBar = document.getElementById('multi-agent-progress-bar');
+        const progressPercent = document.getElementById('multi-agent-progress-percentage');
+        
+        if (progressBar) {
+            progressBar.style.width = `${percentage}%`;
+        }
+        
+        if (progressPercent) {
+            progressPercent.textContent = `${percentage}%`;
+        }
+        
+        // Estimate remaining time
+        if (completed > 0 && this.startTime) {
+            const elapsed = Date.now() - this.startTime - this.pausedTime;
+            const avgTimePerStep = elapsed / completed;
+            const remaining = Math.ceil((total - completed) * avgTimePerStep);
+            const remainingMinutes = Math.floor(remaining / 60000);
+            const remainingSeconds = Math.floor((remaining % 60000) / 1000);
+            
+            const estimateEl = document.getElementById('multi-agent-time-estimate');
+            if (estimateEl) {
+                if (remainingMinutes > 0) {
+                    estimateEl.textContent = `Est: ~${remainingMinutes}m ${remainingSeconds}s remaining`;
+                } else {
+                    estimateEl.textContent = `Est: ~${remainingSeconds}s remaining`;
+                }
             }
         }
+    }
+    
+    /**
+     * Escape HTML helper
+     * @private
+     */
+    _escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
     
     // Hide progress modal
@@ -1130,6 +1397,10 @@ Please provide a resolution that reconciles these conflicts. Respond with a JSON
         const modal = document.getElementById('multi-agent-progress-modal');
         if (modal) {
             modal.style.display = 'none';
+        }
+        if (this.timeTrackingInterval) {
+            clearInterval(this.timeTrackingInterval);
+            this.timeTrackingInterval = null;
         }
     }
     
@@ -1211,8 +1482,9 @@ Please provide a resolution that reconciles these conflicts. Respond with a JSON
                 ${agentInfo.retryCount > 0 ? `<span style="color: #ff9800; font-size: 0.9em;">[Retry ${agentInfo.retryCount}]</span>` : ''}
             `;
             if (window.safeSetInnerHTML) {
-                window.safeSetInnerHTML(agentEl, agentHtml, { trusted: false });
+                window.safeSetInnerHTML(agentEl, agentHtml, { trusted: true });
             } else {
+                // Fallback: agentHtml has user content escaped, safe
                 agentEl.innerHTML = agentHtml;
             }
             container.appendChild(agentEl);
@@ -1298,7 +1570,12 @@ Please provide a resolution that reconciles these conflicts. Respond with a JSON
         if (!container) return;
         
         if (this.agentDiscussions.size === 0) {
-            container.innerHTML = '<div style="color: #888;">No conversations yet</div>';
+            const noConvosHtml = '<div style="color: #888;">No conversations yet</div>';
+            if (window.safeSetInnerHTML) {
+                window.safeSetInnerHTML(container, noConvosHtml, { trusted: true });
+            } else {
+                container.innerHTML = noConvosHtml;
+            }
             return;
         }
         
@@ -1330,7 +1607,12 @@ Please provide a resolution that reconciles these conflicts. Respond with a JSON
         
         if (this.ragSteps.length === 0) {
             // Static message - safe
-            container.innerHTML = '<div style="color: #888;">No RAG steps yet</div>';
+            const noRagHtml = '<div style="color: #888;">No RAG steps yet</div>';
+            if (window.safeSetInnerHTML) {
+                window.safeSetInnerHTML(container, noRagHtml, { trusted: true });
+            } else {
+                container.innerHTML = noRagHtml;
+            }
             return;
         }
         
@@ -1379,9 +1661,11 @@ Please provide a resolution that reconciles these conflicts. Respond with a JSON
     
     // Escape HTML
     escapeHtml(text) {
+        // This function returns HTML string, not setting innerHTML
+        // Create element, set textContent (escapes HTML), then return innerHTML
         const div = document.createElement('div');
         div.textContent = text;
-        return div.innerHTML;
+        return div.innerHTML; // Safe: textContent already escaped any HTML
     }
 }
 

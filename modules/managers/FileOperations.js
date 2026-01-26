@@ -75,6 +75,29 @@ class FileOperations {
                 }
             }
             
+            // Additional validation using ProjectGroupValidator if available
+            if (typeof window !== 'undefined' && window.ProjectGroupValidator) {
+                const validator = new window.ProjectGroupValidator();
+                // Create a mock project group structure for validation
+                const mockGroup = { projects: [project] };
+                const validation = validator.validateProjectGroup(mockGroup);
+                if (!validation.success) {
+                    const error = `Invalid project structure: ${validation.message}`;
+                    if (this.errorHandler) {
+                        this.errorHandler.showUserNotification(error, {
+                            source: 'FileOperations',
+                            operation: 'importProject'
+                        }, {
+                            severity: ErrorHandler.Severity.ERROR,
+                            title: 'Import Failed'
+                        });
+                        throw new Error(error);
+                    } else {
+                        throw new Error(error);
+                    }
+                }
+            }
+            
             // Add project to state
             const state = this.stateManager.getState();
             const projects = [...state.projects, project];

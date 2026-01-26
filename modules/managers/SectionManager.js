@@ -162,7 +162,9 @@ class SectionManager {
         if (!modal || !listContainer) return;
         
         // Clear previous content
-        listContainer.innerHTML = '';
+        while (listContainer.firstChild) {
+            listContainer.removeChild(listContainer.firstChild);
+        }
         pasteBtn.disabled = true;
         selectedSectionId = null;
         
@@ -432,8 +434,10 @@ class SectionManager {
      * Escape HTML to prevent XSS
      */
     escapeHtml(text) {
+        // This function returns HTML string, not setting innerHTML
+        // Create element, set textContent (escapes HTML), then return innerHTML
         const div = document.createElement('div');
         div.textContent = text;
-        return div.innerHTML;
+        return div.innerHTML; // Safe: textContent already escaped any HTML
     }
 }

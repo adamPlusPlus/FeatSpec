@@ -13,7 +13,6 @@
 function sanitizeHtml(html, options = {}) {
     if (typeof html !== 'string') return '';
     if (options.trusted) {
-        console.log('sanitizeHtml: trusted=true, returning HTML as-is', { htmlLength: html.length });
         return html; // Skip sanitization for trusted content
     }
     
@@ -92,21 +91,7 @@ function safeSetInnerHTML(element, html, options = {}) {
         return;
     }
     
-    console.log('safeSetInnerHTML called', { 
-        elementId: element.id, 
-        elementTag: element.tagName,
-        htmlLength: html.length,
-        options: options,
-        trusted: options.trusted
-    });
-    
     const sanitized = sanitizeHtml(html, options);
-    console.log('safeSetInnerHTML: sanitized result', { 
-        sanitizedLength: sanitized.length,
-        firstChars: sanitized.substring(0, 100),
-        isEscaped: sanitized.includes('&lt;') && !html.includes('&lt;')
-    });
-    
     element.innerHTML = sanitized;
 }
 

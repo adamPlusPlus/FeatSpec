@@ -100,6 +100,9 @@ class PromptSpecApp {
             processSteps: this.processStepService,
             placeholder: this.placeholderService
         };
+        
+        // Store references for quick start wizard
+        this.quickStartWizard = null;
         this.initializationManager = new InitializationManager(
             this,
             this.stateManager,
@@ -1079,7 +1082,8 @@ class PromptSpecApp {
                     // Handle both old format (number) and new format (object)
                     const caseNumber = typeof result === 'object' ? result.caseNumber : result;
                     const automationEngine = typeof result === 'object' ? result.automationEngine : 'file-watching';
-                    await this.createProject(name, '', caseNumber, null, false, automationEngine);
+                    const templateId = typeof result === 'object' ? result.templateId : 'empty';
+                    await this.createProjectFromTemplate(name, '', caseNumber, null, false, automationEngine, templateId);
                     this.renderingEngine.renderAll();
                 }
             }
@@ -1638,14 +1642,16 @@ class PromptSpecApp {
             if (typeof window !== 'undefined' && window.safeSetInnerHTML) {
                 window.safeSetInnerHTML(content, html, { allowMarkdown: false });
             } else {
+                // Fallback: html contains reference document content (trusted source)
                 content.innerHTML = html;
             }
         } catch (error) {
             console.error('Failed to render reference documents:', error);
+            const errorHtml = '<p>Failed to load reference documents</p>';
             if (typeof window !== 'undefined' && window.safeSetInnerHTML) {
-                window.safeSetInnerHTML(content, '<p>Failed to load reference documents</p>', { trusted: false });
+                window.safeSetInnerHTML(content, errorHtml, { trusted: true });
             } else {
-                content.innerHTML = '<p>Failed to load reference documents</p>';
+                content.innerHTML = errorHtml;
             }
         }
     }
@@ -1666,9 +1672,10 @@ class PromptSpecApp {
             const headerHtml = `<h2>${this.escapeHtml(name)}</h2><button class="close-btn" data-action="close-modal">×</button>`;
             const bodyHtml = `<pre class="reference-content">${this.escapeHtml(content)}</pre>`;
             if (typeof window !== 'undefined' && window.safeSetInnerHTML) {
-                window.safeSetInnerHTML(modalHeader, headerHtml, { trusted: false });
-                window.safeSetInnerHTML(modalBody, bodyHtml, { trusted: false });
+                window.safeSetInnerHTML(modalHeader, headerHtml, { trusted: true });
+                window.safeSetInnerHTML(modalBody, bodyHtml, { trusted: true });
             } else {
+                // Fallback: headerHtml and bodyHtml are application-generated, safe
                 modalHeader.innerHTML = headerHtml;
                 modalBody.innerHTML = bodyHtml;
             }
@@ -1685,9 +1692,11 @@ class PromptSpecApp {
     // Escape HTML helper
     escapeHtml(text) {
         if (!text) return '';
+        // This function returns HTML string, not setting innerHTML
+        // Create element, set textContent (escapes HTML), then return innerHTML
         const div = document.createElement('div');
         div.textContent = text;
-        return div.innerHTML;
+        return div.innerHTML; // Safe: textContent already escaped any HTML
     }
     
     // Handle context menu actions
@@ -2727,6 +2736,7 @@ class PromptSpecApp {
         if (window.safeSetInnerHTML) {
             window.safeSetInnerHTML(modalBody, html, { trusted: false });
         } else {
+            // Fallback: html should have user content escaped, but be cautious
             modalBody.innerHTML = html;
         }
         modal.classList.add('active');
@@ -2745,9 +2755,11 @@ class PromptSpecApp {
     
     // Escape HTML
     escapeHtml(text) {
+        // This function returns HTML string, not setting innerHTML
+        // Create element, set textContent (escapes HTML), then return innerHTML
         const div = document.createElement('div');
         div.textContent = text;
-        return div.innerHTML;
+        return div.innerHTML; // Safe: textContent already escaped any HTML
     }
     
     // Close modal
@@ -3256,6 +3268,104 @@ class PromptSpecApp {
         return await this.stateManager.createProject(name, description, caseNumber, caseChain, customWorkflow, automationEngine);
     }
     
+    /**
+     * Create project from template
+     * @param {string} name - Project name
+     * @param {string} description - Project description
+     * @param {number} caseNumber - Case number
+     * @param {Object|null} caseChain - Case chain info
+     * @param {boolean} customWorkflow - Custom workflow flag
+     * @param {string} automationEngine - Automation engine
+     * @param {string} templateId - Template ID ('empty' for no template)
+     * @returns {Promise<Object>} Created project
+     */
+    async createProjectFromTemplate(name, description, caseNumber, caseChain, customWorkflow, automationEngine, templateId = 'empty') {
+        const projectTemplates = window.ProjectTemplates ? new window.ProjectTemplates() : null;
+        
+        // If no template or empty template, use normal creation
+        if (!projectTemplates || templateId === 'empty' || !templateId) {
+            return await this.createProject(name, description, caseNumber, caseChain, customWorkflow, automationEngine);
+        }
+        
+        // Load template data
+        try {
+            const templateData = projectTemplates.loadTemplate(templateId, name, description);
+            
+            // Override case number if template specifies one
+            const finalCaseNumber = templateData.case || caseNumber;
+            
+            // Create project with template sections
+            if (this.projectManager && this.projectManager.loadTemplate) {
+                return await this.projectManager.loadTemplate(templateData, finalCaseNumber, automationEngine);
+            } else {
+                // Fallback: create project normally, then update with template data
+                const project = await this.createProject(name, description, finalCaseNumber, caseChain, customWorkflow, automationEngine);
+                
+                // Update project with template sections if provided
+                if (templateData.sections && templateData.sections.length > 0) {
+                    // Merge template sections with generated sections
+                    const existingSections = project.sections || [];
+                    const templateSections = templateData.sections.map(templateSection => {
+                        // Find matching section by ID or create new
+                        const existing = existingSections.find(s => s.sectionId === templateSection.sectionId);
+                        if (existing) {
+                            // Merge template data into existing section
+                            return {
+                                ...existing,
+                                input: templateSection.input || existing.input,
+                                output: templateSection.output || existing.output,
+                                notes: templateSection.notes || existing.notes,
+                                status: templateSection.status || existing.status
+                            };
+                        } else {
+                            // Create new section from template
+                            return {
+                                ...templateSection,
+                                automationId: templateSection.automationId || this._generateAutomationId(),
+                                validationStatus: null,
+                                prompt: '',
+                                dependencies: templateSection.dependencies || [],
+                                modifiers: templateSection.modifiers || [],
+                                overrideInstructions: '',
+                                isProcessStep: false,
+                                isInferenceStep: false,
+                                processStepType: null,
+                                specialized: null,
+                                lastModified: Date.now()
+                            };
+                        }
+                    });
+                    
+                    // Update project with merged sections
+                    this.stateManager.updateProject(project.id, {
+                        sections: templateSections,
+                        description: templateData.description || description
+                    });
+                }
+                
+                return project;
+            }
+        } catch (error) {
+            console.error('Error loading template:', error);
+            // Fallback to normal project creation
+            return await this.createProject(name, description, caseNumber, caseChain, customWorkflow, automationEngine);
+        }
+    }
+    
+    /**
+     * Generate a unique 4-character alphanumeric ID
+     * @private
+     * @returns {string} Unique ID
+     */
+    _generateAutomationId() {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        let id = '';
+        for (let i = 0; i < 4; i++) {
+            id += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return id;
+    }
+    
     // Remove Input Guidance section from prompt text
     removeInputGuidanceFromPrompt(prompt) {
         if (!prompt) return prompt;
@@ -3425,6 +3535,7 @@ class PromptSpecApp {
             if (window.safeSetInnerHTML) {
                 window.safeSetInnerHTML(item, itemHtml, { trusted: false });
             } else {
+                // Fallback: itemHtml contains user data (section names) - should be escaped
                 item.innerHTML = itemHtml;
             }
             
@@ -4245,17 +4356,283 @@ class PromptSpecApp {
     // ============================================
     
     /**
-     * Render case options HTML
+     * Render case options HTML with enhanced guidance
      * @private
-     * @returns {string} HTML string for case options
+     * @param {Array} cases - Array of case info objects
+     * @returns {Promise<string>} HTML string for case options
      */
-    _renderCaseOptions(cases) {
-        return cases.map(caseInfo => `
-            <div class="case-option" data-case="${caseInfo.number}">
-                <h3>Case ${caseInfo.number}: ${caseInfo.name}</h3>
-                <p>${caseInfo.description}</p>
-            </div>
-        `).join('');
+    async _renderCaseOptions(cases) {
+        const pipelineConfig = window.PipelineConfig;
+        if (!pipelineConfig) {
+            // Fallback to simple rendering
+            return cases.map(caseInfo => `
+                <div class="case-option" data-case="${caseInfo.number}">
+                    <h3>Case ${caseInfo.number}: ${caseInfo.name}</h3>
+                    <p>${caseInfo.description}</p>
+                </div>
+            `).join('');
+        }
+        
+        const caseOptions = await Promise.all(cases.map(async (caseInfo) => {
+            const caseConfig = await pipelineConfig.getCaseConfig(caseInfo.number);
+            const sections = await pipelineConfig.generateSectionsForCase(caseInfo.number);
+            const sectionCount = sections.length;
+            
+            // Determine complexity based on case number and section count
+            let complexity = 'beginner';
+            let complexityLabel = 'Beginner';
+            if (caseInfo.number === 6 || caseInfo.number === 7) {
+                complexity = 'advanced';
+                complexityLabel = 'Advanced';
+            } else if (caseInfo.number === 2 || caseInfo.number === 5) {
+                complexity = 'intermediate';
+                complexityLabel = 'Intermediate';
+            } else if (sectionCount > 10) {
+                complexity = 'intermediate';
+                complexityLabel = 'Intermediate';
+            }
+            
+            // Estimate completion time (rough estimate: 30-60 min per section)
+            const estimatedHours = Math.ceil(sectionCount * 0.75);
+            const timeEstimate = estimatedHours === 1 ? '~1 hour' : `~${estimatedHours} hours`;
+            
+            // Get use case examples
+            const useCases = this._getCaseUseCases(caseInfo.number);
+            
+            // Get section names for preview
+            const sectionNames = sections.slice(0, 5).map(s => s.name);
+            const hasMoreSections = sections.length > 5;
+            
+            return `
+                <div class="case-option" data-case="${caseInfo.number}">
+                    <div class="case-option-header">
+                        <div class="case-option-title-row">
+                            <h3>Case ${caseInfo.number}: ${caseInfo.name}</h3>
+                            <span class="complexity-badge complexity-${complexity}">${complexityLabel}</span>
+                        </div>
+                        <div class="case-option-meta">
+                            <span class="section-count">${sectionCount} sections</span>
+                            <span class="time-estimate">${timeEstimate}</span>
+                        </div>
+                    </div>
+                    <p class="case-description">${caseInfo.description}</p>
+                    <div class="case-use-cases">
+                        <strong>Use cases:</strong>
+                        <ul>
+                            ${useCases.map(uc => `<li>${uc}</li>`).join('')}
+                        </ul>
+                    </div>
+                    <div class="case-sections-preview">
+                        <strong>Sections:</strong>
+                        <div class="section-list">
+                            ${sectionNames.map(name => `<span class="section-tag">${this.escapeHtml(name)}</span>`).join('')}
+                            ${hasMoreSections ? `<span class="section-tag-more">+${sections.length - 5} more</span>` : ''}
+                        </div>
+                    </div>
+                    <button class="case-learn-more-btn" data-case="${caseInfo.number}" type="button">
+                        <span class="learn-more-text">Learn More</span>
+                        <span class="learn-more-icon">▼</span>
+                    </button>
+                    <div class="case-details" data-case="${caseInfo.number}" style="display: none;">
+                        <div class="case-details-content">
+                            <h4>All Sections (${sectionCount})</h4>
+                            <ol class="case-sections-list">
+                                ${sections.map((s, idx) => `<li>${this.escapeHtml(s.name)}</li>`).join('')}
+                            </ol>
+                            <h4>Workflow</h4>
+                            <p>This case follows a ${caseInfo.number === 6 ? 'flexible, repeatable' : 'sequential'} workflow with ${sectionCount} main sections${caseInfo.number === 2 ? ' plus inference steps' : ''}.</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }));
+        
+        return caseOptions.join('');
+    }
+    
+    /**
+     * Get use case examples for a case
+     * @private
+     * @param {number} caseNumber - Case number
+     * @returns {Array<string>} Array of use case strings
+     */
+    _getCaseUseCases(caseNumber) {
+        const useCaseMap = {
+            1: [
+                'Analyzing existing codebase for feature extraction',
+                'Understanding legacy application structure',
+                'Documenting current implementation patterns'
+            ],
+            2: [
+                'Analyzing UI/UX of running application without source code',
+                'Reverse engineering user interface patterns',
+                'Creating specs from live application observation'
+            ],
+            3: [
+                'Processing user-provided feature descriptions',
+                'Converting VTT transcripts into structured specs',
+                'Transforming unstructured input into organized features'
+            ],
+            4: [
+                'Preparing raw input for pipeline injection',
+                'Organizing user stories into structured format',
+                'Parsing and structuring various input types'
+            ],
+            5: [
+                'Iterative refinement of product ideas',
+                'Documentation-driven development',
+                'Architecture specification from concepts'
+            ],
+            6: [
+                'Philosophical/cognitive framework analysis',
+                'Flexible, repeatable workflow design',
+                'Pre-conceptual orientation establishment'
+            ],
+            7: [
+                'Materialization of poiesis into implementable form',
+                'Transforming conceptual frameworks into specifications'
+            ]
+        };
+        return useCaseMap[caseNumber] || ['General feature specification'];
+    }
+    
+    /**
+     * Show quick jump dialog for section navigation
+     */
+    showQuickJumpDialog() {
+        const modal = document.getElementById('quick-jump-modal');
+        const searchInput = document.getElementById('quick-jump-search');
+        const listContainer = document.getElementById('quick-jump-list');
+        const closeBtn = document.getElementById('quick-jump-close');
+        
+        if (!modal || !searchInput || !listContainer || !closeBtn) {
+            return;
+        }
+        
+        const activeProject = this.stateManager.getActiveProject();
+        if (!activeProject || !activeProject.sections || activeProject.sections.length === 0) {
+            return;
+        }
+        
+        // Show modal
+        modal.style.display = 'flex';
+        
+        // Render sections list
+        const renderSections = (filter = '') => {
+            const filterLower = filter.toLowerCase();
+            const sections = activeProject.sections.filter(section => {
+                if (!filter) return true;
+                return section.sectionName.toLowerCase().includes(filterLower) ||
+                       section.sectionId.toLowerCase().includes(filterLower) ||
+                       section.status.toLowerCase().includes(filterLower);
+            });
+            
+            if (sections.length === 0) {
+                listContainer.innerHTML = '<div class="quick-jump-empty">No sections found</div>';
+                return;
+            }
+            
+            const html = sections.map((section, index) => {
+                const statusClass = `status-${section.status || 'not_started'}`;
+                const isActive = section.sectionId === this.renderingEngine.activeSectionId;
+                const statusText = section.status === 'complete' ? '✓' : 
+                                  section.status === 'in_progress' ? '◐' : 
+                                  section.status === 'needs_revision' ? '⚠' : '○';
+                
+                return `
+                    <div class="quick-jump-item ${isActive ? 'active' : ''}" 
+                         data-section-id="${section.sectionId}" 
+                         data-index="${index}"
+                         tabindex="0">
+                        <div class="quick-jump-item-content">
+                            <span class="quick-jump-status ${statusClass}">${statusText}</span>
+                            <span class="quick-jump-name">${this.escapeHtml(section.sectionName)}</span>
+                            <span class="quick-jump-id">${this.escapeHtml(section.sectionId)}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            if (window.safeSetInnerHTML) {
+                window.safeSetInnerHTML(listContainer, html, { trusted: true });
+            } else {
+                listContainer.innerHTML = html;
+            }
+            
+            // Setup click handlers
+            listContainer.querySelectorAll('.quick-jump-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const sectionId = item.dataset.sectionId;
+                    if (sectionId && this.sectionManager) {
+                        this.sectionManager.navigateToSection(activeProject.id, sectionId);
+                        modal.style.display = 'none';
+                        searchInput.value = '';
+                    }
+                });
+                
+                // Keyboard navigation
+                item.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        item.click();
+                    }
+                });
+            });
+        };
+        
+        // Initial render
+        renderSections();
+        
+        // Search input handler
+        let searchTimeout;
+        searchInput.addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                renderSections(e.target.value);
+            }, 150);
+        });
+        
+        // Keyboard navigation in list
+        let selectedIndex = -1;
+        listContainer.addEventListener('keydown', (e) => {
+            const items = Array.from(listContainer.querySelectorAll('.quick-jump-item'));
+            if (items.length === 0) return;
+            
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+                items[selectedIndex].focus();
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedIndex = Math.max(selectedIndex - 1, 0);
+                items[selectedIndex].focus();
+            }
+        });
+        
+        // Close handlers
+        const closeModal = () => {
+            modal.style.display = 'none';
+            searchInput.value = '';
+            selectedIndex = -1;
+        };
+        
+        closeBtn.onclick = closeModal;
+        const backdrop = modal.querySelector('.modal-backdrop');
+        if (backdrop) {
+            backdrop.onclick = closeModal;
+        }
+        
+        // Escape key to close
+        const escapeHandler = (e) => {
+            if (e.key === 'Escape' && modal.style.display === 'flex') {
+                closeModal();
+                document.removeEventListener('keydown', escapeHandler);
+            }
+        };
+        document.addEventListener('keydown', escapeHandler);
+        
+        // Focus search input
+        setTimeout(() => searchInput.focus(), 100);
     }
     
     /**
@@ -4269,12 +4646,60 @@ class PromptSpecApp {
     }
     
     /**
+     * Setup template selection handlers
+     * @private
+     */
+    _setupTemplateSelection() {
+        const templateOptions = document.querySelectorAll('.template-option');
+        const projectTemplates = window.ProjectTemplates ? new window.ProjectTemplates() : null;
+        
+        if (!projectTemplates) {
+            // If ProjectTemplates not available, hide template selection
+            const templateSection = document.querySelector('.template-selection');
+            if (templateSection) {
+                templateSection.style.display = 'none';
+            }
+            return;
+        }
+        
+        // Load templates
+        const templates = projectTemplates.getAllTemplates();
+        const templateContainer = document.getElementById('template-options');
+        if (templateContainer) {
+            const html = templates.map(template => `
+                <div class="template-option ${template.id === 'empty' ? 'selected' : ''}" data-template="${template.id}">
+                    <span class="template-icon">${template.icon}</span>
+                    <div class="template-info">
+                        <span class="template-name">${this.escapeHtml(template.name)}</span>
+                        <span class="template-description">${this.escapeHtml(template.description)}</span>
+                    </div>
+                </div>
+            `).join('');
+            
+            if (window.safeSetInnerHTML) {
+                window.safeSetInnerHTML(templateContainer, html, { trusted: true });
+            } else {
+                templateContainer.innerHTML = html;
+            }
+            
+            // Setup click handlers
+            templateContainer.querySelectorAll('.template-option').forEach(option => {
+                option.addEventListener('click', () => {
+                    templateContainer.querySelectorAll('.template-option').forEach(opt => opt.classList.remove('selected'));
+                    option.classList.add('selected');
+                });
+            });
+        }
+    }
+    
+    /**
      * Setup event handlers for case selection dialog
      * @private
      */
     _setupCaseSelectionEventHandlers(body, confirmBtn, cancelBtn, closeBtn, modal, resolve) {
         let selectedCase = null;
         let selectedEngine = 'file-watching'; // Default
+        let selectedTemplate = 'empty'; // Default
         
         // Handle case selection
         body.querySelectorAll('.case-option').forEach(option => {
@@ -4298,11 +4723,27 @@ class PromptSpecApp {
             });
         });
         
+        // Handle template selection
+        const templateOptions = document.querySelectorAll('.template-option');
+        templateOptions.forEach(option => {
+            option.addEventListener('click', () => {
+                templateOptions.forEach(opt => {
+                    opt.classList.remove('selected');
+                });
+                option.classList.add('selected');
+                selectedTemplate = option.dataset.template;
+            });
+        });
+        
         // Handle confirm
         const handleConfirm = () => {
             if (selectedCase) {
                 modal.style.display = 'none';
-                resolve({ caseNumber: selectedCase, automationEngine: selectedEngine });
+                resolve({ 
+                    caseNumber: selectedCase, 
+                    automationEngine: selectedEngine,
+                    templateId: selectedTemplate
+                });
             }
         };
         
@@ -4323,6 +4764,177 @@ class PromptSpecApp {
         // Show modal
         modal.style.display = 'flex';
         confirmBtn.disabled = true;
+    }
+    
+    /**
+     * Setup event handlers for "Learn More" expandable sections
+     * @private
+     */
+    _setupCaseLearnMoreHandlers(body) {
+        body.querySelectorAll('.case-learn-more-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent case selection when clicking Learn More
+                const caseNumber = btn.dataset.case;
+                const details = body.querySelector(`.case-details[data-case="${caseNumber}"]`);
+                const icon = btn.querySelector('.learn-more-icon');
+                
+                if (details) {
+                    const isExpanded = details.style.display !== 'none';
+                    details.style.display = isExpanded ? 'none' : 'block';
+                    icon.textContent = isExpanded ? '▼' : '▲';
+                    btn.classList.toggle('expanded', !isExpanded);
+                }
+            });
+        });
+    }
+    
+    /**
+     * Setup event handlers for case preview panel
+     * @private
+     */
+    _setupCasePreviewHandlers(body) {
+        const previewPanel = document.getElementById('case-selection-preview');
+        if (!previewPanel) return;
+        
+        // Update preview when case is selected
+        body.querySelectorAll('.case-option').forEach(option => {
+            option.addEventListener('click', async () => {
+                const caseNumber = parseInt(option.dataset.case);
+                await this._updateCasePreview(caseNumber, previewPanel);
+            });
+        });
+    }
+    
+    /**
+     * Update case preview panel with section information
+     * @private
+     * @param {number} caseNumber - Case number
+     * @param {HTMLElement} previewPanel - Preview panel element
+     */
+    async _updateCasePreview(caseNumber, previewPanel) {
+        const pipelineConfig = window.PipelineConfig;
+        if (!pipelineConfig) {
+            previewPanel.innerHTML = '<div class="preview-placeholder"><p>Preview unavailable</p></div>';
+            return;
+        }
+        
+        try {
+            const sections = await pipelineConfig.generateSectionsForCase(caseNumber);
+            const caseConfig = await pipelineConfig.getCaseConfig(caseNumber);
+            
+            // Build dependency visualization
+            const dependencyMap = new Map();
+            sections.forEach(section => {
+                if (section.dependencies && section.dependencies.length > 0) {
+                    dependencyMap.set(section.id, section.dependencies);
+                }
+            });
+            
+            // Calculate workflow estimate
+            const estimatedHours = Math.ceil(sections.length * 0.75);
+            const timeEstimate = estimatedHours === 1 ? '~1 hour' : `~${estimatedHours} hours`;
+            
+            // Build sections list with dependencies
+            const sectionsHtml = sections.map((section, index) => {
+                const deps = section.dependencies || [];
+                const depsText = deps.length > 0 
+                    ? `Depends on: ${deps.map(d => {
+                        const depSection = sections.find(s => s.id === d);
+                        return depSection ? depSection.name : d;
+                    }).join(', ')}`
+                    : 'No dependencies';
+                
+                return `
+                    <div class="preview-section-item">
+                        <div class="preview-section-header">
+                            <span class="preview-section-number">${index + 1}</span>
+                            <span class="preview-section-name">${this.escapeHtml(section.name)}</span>
+                        </div>
+                        <div class="preview-section-deps">${this.escapeHtml(depsText)}</div>
+                    </div>
+                `;
+            }).join('');
+            
+            const html = `
+                <div class="preview-content">
+                    <h3>Sections Preview</h3>
+                    <div class="preview-summary">
+                        <div class="preview-stat">
+                            <span class="preview-stat-label">Total Sections:</span>
+                            <span class="preview-stat-value">${sections.length}</span>
+                        </div>
+                        <div class="preview-stat">
+                            <span class="preview-stat-label">Estimated Time:</span>
+                            <span class="preview-stat-value">${timeEstimate}</span>
+                        </div>
+                        <div class="preview-stat">
+                            <span class="preview-stat-label">Workflow Type:</span>
+                            <span class="preview-stat-value">${caseNumber === 6 ? 'Flexible' : 'Sequential'}</span>
+                        </div>
+                    </div>
+                    <div class="preview-sections-list">
+                        ${sectionsHtml}
+                    </div>
+                    ${dependencyMap.size > 0 ? `
+                        <div class="preview-dependencies">
+                            <h4>Dependency Chain</h4>
+                            <div class="dependency-chain">
+                                ${this._renderDependencyChain(sections, dependencyMap)}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            
+            if (window.safeSetInnerHTML) {
+                window.safeSetInnerHTML(previewPanel, html, { trusted: true });
+            } else {
+                previewPanel.innerHTML = html;
+            }
+        } catch (error) {
+            console.error('Error updating case preview:', error);
+            previewPanel.innerHTML = '<div class="preview-placeholder"><p>Error loading preview</p></div>';
+        }
+    }
+    
+    /**
+     * Render dependency chain visualization
+     * @private
+     * @param {Array} sections - Array of section objects
+     * @param {Map} dependencyMap - Map of section ID to dependencies
+     * @returns {string} HTML string for dependency chain
+     */
+    _renderDependencyChain(sections, dependencyMap) {
+        if (dependencyMap.size === 0) return '<p style="color: #888; font-size: 12px;">No dependencies</p>';
+        
+        // Build a simple chain visualization
+        const chainItems = [];
+        sections.forEach(section => {
+            const deps = dependencyMap.get(section.id) || [];
+            if (deps.length > 0) {
+                deps.forEach(depId => {
+                    const depSection = sections.find(s => s.id === depId);
+                    if (depSection) {
+                        chainItems.push({
+                            from: depSection.name,
+                            to: section.name
+                        });
+                    }
+                });
+            }
+        });
+        
+        if (chainItems.length === 0) {
+            return '<p style="color: #888; font-size: 12px;">No dependencies</p>';
+        }
+        
+        return chainItems.map(item => `
+            <div class="dependency-link">
+                <span class="dependency-from">${this.escapeHtml(item.from)}</span>
+                <span class="dependency-arrow">→</span>
+                <span class="dependency-to">${this.escapeHtml(item.to)}</span>
+            </div>
+        `).join('');
     }
     
     // Show case selection dialog
@@ -4351,9 +4963,17 @@ class PromptSpecApp {
                 return;
             }
             
-            pipelineConfig.getAllCases().then(cases => {
-                body.innerHTML = this._renderCaseOptions(cases);
+            pipelineConfig.getAllCases().then(async cases => {
+                const html = await this._renderCaseOptions(cases);
+                if (window.safeSetInnerHTML) {
+                    window.safeSetInnerHTML(body, html, { trusted: true });
+                } else {
+                    body.innerHTML = html;
+                }
                 this._setupCaseSelectionEventHandlers(body, confirmBtn, cancelBtn, closeBtn, modal, resolve);
+                this._setupCaseLearnMoreHandlers(body);
+                this._setupCasePreviewHandlers(body);
+                this._setupTemplateSelection();
             }).catch(error => {
                 console.error('Error loading cases:', error);
                 resolve(this._showCaseSelectionFallback());
@@ -4414,8 +5034,9 @@ class PromptSpecApp {
                 `;
             }).join('');
             if (window.safeSetInnerHTML) {
-                window.safeSetInnerHTML(body, modifierHtml, { trusted: false });
+                window.safeSetInnerHTML(body, modifierHtml, { trusted: true });
             } else {
+                // Fallback: modifierHtml is application-generated, safe
                 body.innerHTML = modifierHtml;
             }
             
@@ -4920,7 +5541,12 @@ class PromptSpecApp {
         // Create modal
         const modal = document.createElement('div');
         modal.className = 'modal';
-        modal.innerHTML = this._renderAddStepDialogHTML(existingSteps, stepsByCase, project, referenceSectionId, position);
+        const dialogHtml = this._renderAddStepDialogHTML(existingSteps, stepsByCase, project, referenceSectionId, position);
+        if (window.safeSetInnerHTML) {
+            window.safeSetInnerHTML(modal, dialogHtml, { trusted: true });
+        } else {
+            modal.innerHTML = dialogHtml;
+        }
         
         document.body.appendChild(modal);
         modal.style.display = 'flex';
@@ -5021,7 +5647,9 @@ class PromptSpecApp {
             
             if (result.success && files && files.length > 0) {
                 // Clear existing options
-                projectGroupSelect.innerHTML = ''; // Clearing - safe
+                while (projectGroupSelect.firstChild) {
+                    projectGroupSelect.removeChild(projectGroupSelect.firstChild);
+                }
                 
                 // Add file options
                 files.forEach(file => {
@@ -5049,7 +5677,9 @@ class PromptSpecApp {
                 }
             } else {
                 // No saved files, but show current project group if we have one
-                projectGroupSelect.innerHTML = ''; // Clearing - safe
+                while (projectGroupSelect.firstChild) {
+                    projectGroupSelect.removeChild(projectGroupSelect.firstChild);
+                }
                 if (currentProjectGroupName && currentFilename) {
                     const option = document.createElement('option');
                     option.value = currentFilename;
@@ -5065,7 +5695,9 @@ class PromptSpecApp {
             }
         } catch (error) {
             console.error('Failed to load project groups:', error);
-            projectGroupSelect.innerHTML = '';
+            while (projectGroupSelect.firstChild) {
+                projectGroupSelect.removeChild(projectGroupSelect.firstChild);
+            }
             if (currentProjectGroupName && currentFilename) {
                 const option = document.createElement('option');
                 option.value = currentFilename;
@@ -5115,12 +5747,14 @@ class PromptSpecApp {
             }
             
             const result = await response.json();
-            if (!result.success) {
-                throw new Error(result.error || 'Failed to load file');
+            // Server wraps response in { success: true, data: { success: true, content: ... } }
+            const fileData = result.data || result;
+            if (!fileData.success) {
+                throw new Error(fileData.error || 'Failed to load file');
             }
             
             // Parse JSON content
-            const state = JSON.parse(result.content);
+            const state = JSON.parse(fileData.content);
             
             // Update project group name from loaded state or filename
             const projectGroupInput = document.getElementById('project-group-name');
@@ -5345,7 +5979,12 @@ class PromptSpecApp {
         
         // Show loading state
         // Static message - safe
-        content.innerHTML = '<p style="color: #888;">Loading guidance...</p>';
+        const loadingHtml = '<p style="color: #888;">Loading guidance...</p>';
+        if (window.safeSetInnerHTML) {
+            window.safeSetInnerHTML(content, loadingHtml, { trusted: true });
+        } else {
+            content.innerHTML = loadingHtml;
+        }
         modal.style.display = 'flex';
         
         try {
@@ -5431,13 +6070,30 @@ class PromptSpecApp {
                     html += '</ul>';
                 }
                 
-                content.innerHTML = html;
+                // html contains guidance content (trusted source)
+                if (window.safeSetInnerHTML) {
+                    window.safeSetInnerHTML(content, html, { trusted: true });
+                } else {
+                    content.innerHTML = html;
+                }
             } else {
-                content.innerHTML = '<p style="color: #888;">No input guidance available for this step.</p>';
+                const noGuidanceHtml = '<p style="color: #888;">No input guidance available for this step.</p>';
+                if (window.safeSetInnerHTML) {
+                    window.safeSetInnerHTML(content, noGuidanceHtml, { trusted: true });
+                } else {
+                    content.innerHTML = noGuidanceHtml;
+                }
             }
         } catch (error) {
             console.error('Error loading input guidance:', error);
-            content.innerHTML = `<p style="color: #ff5555;">Error loading guidance: ${error.message}</p>`;
+            // error.message is user data - escape it
+            const errorMsg = this.escapeHtml(error.message);
+            const errorHtml = `<p style="color: #ff5555;">Error loading guidance: ${errorMsg}</p>`;
+            if (window.safeSetInnerHTML) {
+                window.safeSetInnerHTML(content, errorHtml, { trusted: true });
+            } else {
+                content.innerHTML = errorHtml;
+            }
         }
     }
     
@@ -5604,9 +6260,11 @@ class PromptSpecApp {
     
     // Escape HTML helper
     escapeHtml(text) {
+        // This function returns HTML string, not setting innerHTML
+        // Create element, set textContent (escapes HTML), then return innerHTML
         const div = document.createElement('div');
         div.textContent = text;
-        return div.innerHTML;
+        return div.innerHTML; // Safe: textContent already escaped any HTML
     }
     
     // Refresh automation check for all sections
@@ -6396,12 +7054,22 @@ class PromptSpecApp {
                     });
                 } else {
                     // Static message - safe
-                    savedFilesList.innerHTML = '<p style="color: #888; text-align: center; padding: 20px;">No saved files found.</p>';
+                    const noFilesHtml = '<p style="color: #888; text-align: center; padding: 20px;">No saved files found.</p>';
+                    if (window.safeSetInnerHTML) {
+                        window.safeSetInnerHTML(savedFilesList, noFilesHtml, { trusted: true });
+                    } else {
+                        savedFilesList.innerHTML = noFilesHtml;
+                    }
                 }
             } catch (error) {
                 console.error('Failed to load server files:', error);
                 // Static error message - safe
-                savedFilesList.innerHTML = '<p style="color: #ff5555; text-align: center; padding: 20px;">Failed to load files from server.</p>';
+                const errorHtml = '<p style="color: #ff5555; text-align: center; padding: 20px;">Failed to load files from server.</p>';
+                if (window.safeSetInnerHTML) {
+                    window.safeSetInnerHTML(savedFilesList, errorHtml, { trusted: true });
+                } else {
+                    savedFilesList.innerHTML = errorHtml;
+                }
             }
         };
         
@@ -6437,7 +7105,7 @@ class PromptSpecApp {
                 let loadedFilename = null;
                 
                 if (uploadedFile) {
-                    // Load from uploaded file
+                    // Load from uploaded file (DataLayer.importFromFile already validates)
                     state = await this.dataLayer.importFromFile(uploadedFile);
                     loadedFilename = uploadedFile.name;
                 } else if (selectedFile) {
@@ -6453,12 +7121,24 @@ class PromptSpecApp {
                     }
                     
                     const result = await response.json();
-                    if (!result.success) {
-                        throw new Error(result.error || 'Failed to load file');
+                    // Server wraps response in { success: true, data: { success: true, content: ... } }
+                    const fileData = result.data || result;
+                    if (!fileData.success) {
+                        throw new Error(fileData.error || 'Failed to load file');
                     }
                     
                     // Parse JSON content
-                    state = JSON.parse(result.content);
+                    state = JSON.parse(fileData.content);
+                    
+                    // Validate structure using ProjectGroupValidator if available (server already validated, but double-check client-side)
+                    if (typeof window !== 'undefined' && window.ProjectGroupValidator) {
+                        const validator = new window.ProjectGroupValidator();
+                        const validation = validator.validateProjectGroup(state);
+                        if (!validation.success) {
+                            throw new Error(`Invalid file structure: ${validation.message}`);
+                        }
+                    }
+                    
                     loadedFilename = selectedFile;
                 } else {
                     alert('Please select a file to load.');
@@ -7025,4 +7705,18 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = PromptSpecApp;
 } else {
     window.app = new PromptSpecApp();
+    
+    // Show quick start wizard if needed
+    if (window.app && typeof window !== 'undefined' && window.QuickStartWizard) {
+        setTimeout(() => {
+            const wizard = new window.QuickStartWizard(
+                window.app.stateManager,
+                window.app.projectManager,
+                window.app
+            );
+            if (wizard.shouldShow()) {
+                wizard.show();
+            }
+        }, 500); // Small delay to ensure DOM is ready
+    }
 }

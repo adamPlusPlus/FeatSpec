@@ -598,6 +598,7 @@ class UIManager {
         if (window.safeSetInnerHTML) {
             window.safeSetInnerHTML(modalBody, html, { allowMarkdown: false });
         } else {
+            // Fallback: html contains user content (should be sanitized)
             modalBody.innerHTML = html;
         }
         modal.classList.add('active');
@@ -754,8 +755,10 @@ class UIManager {
      * Escape HTML to prevent XSS
      */
     escapeHtml(text) {
+        // This function returns HTML string, not setting innerHTML
+        // Create element, set textContent (escapes HTML), then return innerHTML
         const div = document.createElement('div');
         div.textContent = text;
-        return div.innerHTML;
+        return div.innerHTML; // Safe: textContent already escaped any HTML
     }
 }

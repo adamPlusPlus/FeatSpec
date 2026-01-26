@@ -92,6 +92,59 @@ class ProjectManager {
     }
     
     /**
+     * Load project from template
+     * @param {Object} templateData - Template data object
+     * @param {number} caseNumber - Case number
+     * @param {string} automationEngine - Automation engine
+     * @returns {Promise<Object>} Created project
+     */
+    async loadTemplate(templateData, caseNumber, automationEngine = 'file-watching') {
+        // Create project with template data
+        const project = await this.stateManager.createProject(
+            templateData.name,
+            templateData.description || '',
+            caseNumber || templateData.case || 1,
+            templateData.caseChain || null,
+            templateData.customWorkflow || false,
+            automationEngine
+        );
+        
+        // If template has sections, update project with them
+        if (templateData.sections && templateData.sections.length > 0) {
+            // Get generated sections from state manager
+            const generatedSections = project.sections || [];
+            
+            // Merge template sections with generated sections
+            const mergedSections = templateData.sections.map(templateSection => {
+                const existing = generatedSections.find(s => s.sectionId === templateSection.sectionId);
+                if (existing) {
+                    // Merge template data into existing section
+                    return {
+                        ...existing,
+                        input: templateSection.input || existing.input,
+                        output: templateSection.output || existing.output,
+                        notes: templateSection.notes || existing.notes,
+                        status: templateSection.status || existing.status
+                    };
+                } else {
+                    // Use template section as-is (already has all required fields)
+                    return templateSection;
+                }
+            });
+            
+            // Update project with merged sections
+            this.stateManager.updateProject(project.id, {
+                sections: mergedSections
+            });
+            
+            // Reload project to get updated sections
+            return this.stateManager.getProject(project.id);
+        }
+        
+        return project;
+    }
+    
+    /**
      * Delete project group
      */
     async deleteProjectGroup() {
@@ -561,7 +614,9 @@ class ProjectManager {
             
             if (result.success && files && files.length > 0) {
                 // Clear existing options
-                projectGroupSelect.innerHTML = ''; // Clearing - safe
+                while (projectGroupSelect.firstChild) {
+                    projectGroupSelect.removeChild(projectGroupSelect.firstChild);
+                }
                 
                 // Add file options
                 files.forEach(file => {
@@ -589,7 +644,9 @@ class ProjectManager {
                 }
             } else {
                 // No saved files, but show current project group if we have one
-                projectGroupSelect.innerHTML = ''; // Clearing - safe
+                while (projectGroupSelect.firstChild) {
+                    projectGroupSelect.removeChild(projectGroupSelect.firstChild);
+                }
                 if (currentProjectGroupName && currentFilename) {
                     const option = document.createElement('option');
                     option.value = currentFilename;
@@ -613,7 +670,9 @@ class ProjectManager {
             } else {
                 console.error('Failed to load project groups:', error);
             }
-            projectGroupSelect.innerHTML = '';
+            while (projectGroupSelect.firstChild) {
+                projectGroupSelect.removeChild(projectGroupSelect.firstChild);
+            }
             if (currentProjectGroupName && currentFilename) {
                 const option = document.createElement('option');
                 option.value = currentFilename;
@@ -654,12 +713,23 @@ class ProjectManager {
             }
             
             const result = await response.json();
-            if (!result.success) {
-                throw new Error(result.error || 'Failed to load file');
+            // Server wraps response in { success: true, data: { success: true, content: ... } }
+            const fileData = result.data || result;
+            if (!fileData.success) {
+                throw new Error(fileData.error || 'Failed to load file');
             }
             
             // Parse JSON content
-            const state = JSON.parse(result.content);
+            const state = JSON.parse(fileData.content);
+            
+            // Validate structure using ProjectGroupValidator if available (server already validated, but double-check client-side)
+            if (typeof window !== 'undefined' && window.ProjectGroupValidator) {
+                const validator = new window.ProjectGroupValidator();
+                const validation = validator.validateProjectGroup(state);
+                if (!validation.success) {
+                    throw new Error(`Invalid file structure: ${validation.message}`);
+                }
+            }
             
             // Update project group name from loaded state or filename
             const projectGroupInput = document.getElementById('project-group-name');

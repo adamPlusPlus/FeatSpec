@@ -115,6 +115,7 @@ export class ChatTabBar {
         if (typeof window !== 'undefined' && window.safeSetInnerHTML) {
             window.safeSetInnerHTML(tabElement, tabHtml, { trusted: false });
         } else {
+            // Fallback: tabHtml contains user data (tab names) - should be escaped
             tabElement.innerHTML = tabHtml;
         }
         

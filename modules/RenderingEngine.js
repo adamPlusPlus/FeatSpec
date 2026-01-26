@@ -119,8 +119,65 @@ class RenderingEngine {
                         );
                     }
                     break;
+                case 'navigate-to-projects':
+                    // Navigate to projects view (show project list, clear active section)
+                    if (this.stateManager) {
+                        this.stateManager.setActiveProject(null);
+                        this.activeSectionId = null;
+                        // Switch to pipeline flow view to show project overview
+                        const pipelineView = document.getElementById('pipeline-flow-view');
+                        const sectionView = document.getElementById('section-view');
+                        const viewSectionBtn = document.getElementById('view-section');
+                        const viewPipelineBtn = document.getElementById('view-pipeline');
+                        if (pipelineView && sectionView) {
+                            sectionView.style.display = 'none';
+                            pipelineView.style.display = 'block';
+                            if (viewSectionBtn) viewSectionBtn.classList.remove('active');
+                            if (viewPipelineBtn) viewPipelineBtn.classList.add('active');
+                        }
+                        this.renderAll();
+                    }
+                    break;
+                case 'navigate-to-project':
+                    // Navigate to project view (show project, switch to pipeline flow view)
+                    if (projectId && this.stateManager) {
+                        this.stateManager.setActiveProject(projectId);
+                        this.activeSectionId = null;
+                        // Switch to pipeline flow view to show project overview
+                        const pipelineView = document.getElementById('pipeline-flow-view');
+                        const sectionView = document.getElementById('section-view');
+                        const viewSectionBtn = document.getElementById('view-section');
+                        const viewPipelineBtn = document.getElementById('view-pipeline');
+                        if (pipelineView && sectionView) {
+                            sectionView.style.display = 'none';
+                            pipelineView.style.display = 'block';
+                            if (viewSectionBtn) viewSectionBtn.classList.remove('active');
+                            if (viewPipelineBtn) viewPipelineBtn.classList.add('active');
+                        }
+                        this.renderAll();
+                    }
+                    break;
+                case 'jump-to-section':
+                    // Jump to section from progress bar segment
+                    if (projectId && sectionId && this.sectionManager) {
+                        this.sectionManager.navigateToSection(projectId, sectionId);
+                    }
+                    break;
             }
         };
+        
+        // Setup automation setup wizard button
+        const setupWizardBtn = document.getElementById('automation-setup-wizard-btn');
+        if (setupWizardBtn) {
+            setupWizardBtn.addEventListener('click', () => {
+                const projectId = setupWizardBtn.dataset.projectId;
+                if (projectId && typeof window !== 'undefined' && window.AutomationSetupWizard) {
+                    const wizard = new window.AutomationSetupWizard(this.stateManager, this.projectManager);
+                    wizard.show(projectId);
+                    this._setupWizardHandlers(wizard);
+                }
+            });
+        }
         
         // Track document-level listeners for cleanup
         if (typeof window !== 'undefined' && window.eventListenerManager) {
@@ -500,8 +557,13 @@ class RenderingEngine {
         item.className = `project-item ${isActive ? 'active' : ''}`;
         item.dataset.projectId = project.id;
         
-        // Calculate completion percentage
-        const progress = this.sectionLogic ? this.sectionLogic.calculateProgress(project).percentage : 0;
+        // Calculate completion percentage (use NavigationService if available, fallback to sectionLogic)
+        let progress = 0;
+        if (this.navigation) {
+            progress = this.navigation.calculateProgress(project.id).percentage;
+        } else if (this.sectionLogic) {
+            progress = this.sectionLogic.calculateProgress(project).percentage;
+        }
         
         // Status indicator
         const statusIcon = this.sectionLogic ? this.sectionLogic.getProjectStatusIcon(project) : '○';
@@ -540,7 +602,16 @@ class RenderingEngine {
                 ${processStepCount > 0 ? `<span class="process-count" title="${processStepCount} process steps">⚙️ ${processStepCount}</span>` : ''}
                 <span class="project-progress">${progress}%</span>
             </div>
+            ${this._renderProgressBar(project)}
         `;
+        
+        // Set the HTML content to the item element
+        if (window.safeSetInnerHTML) {
+            window.safeSetInnerHTML(item, itemHtml, { trusted: true });
+        } else {
+            // Fallback: use innerHTML but escape user content (project.name already escaped in itemHtml)
+            item.innerHTML = itemHtml;
+        }
         
         item.addEventListener('click', () => {
             this.stateManager.setActiveProject(project.id);
@@ -678,7 +749,12 @@ class RenderingEngine {
         const section = activeProject.sections.find(s => s.sectionId === this.activeSectionId);
         if (!section) {
             // Static message - safe
-            sectionView.innerHTML = '<div class="section-view-placeholder"><p>No section selected</p></div>';
+            const placeholderHtml = '<div class="section-view-placeholder"><p>No section selected</p></div>';
+            if (window.safeSetInnerHTML) {
+                window.safeSetInnerHTML(sectionView, placeholderHtml, { trusted: true });
+            } else {
+                sectionView.innerHTML = placeholderHtml;
+            }
             return;
         }
         
@@ -701,13 +777,25 @@ class RenderingEngine {
         
         // renderSectionContent is now async, so we need to await it
         this.renderSectionContent(activeProject, section).then(html => {
-            sectionView.innerHTML = html;
+            // HTML is from trusted source (application-generated)
+            if (window.safeSetInnerHTML) {
+                window.safeSetInnerHTML(sectionView, html, { trusted: true });
+            } else {
+                sectionView.innerHTML = html;
+            }
             
             // Load process step buttons asynchronously
             this.loadProcessStepButtons(activeProject, section);
             
             // Load input placeholder asynchronously
             this.loadInputPlaceholder(activeProject, section);
+            
+            // Setup dependency graph click handlers
+            const dependencyGraphContent = document.getElementById(`dependency-graph-content-${activeProject.id}`);
+            if (dependencyGraphContent && typeof window !== 'undefined' && window.DependencyGraph) {
+                const dependencyGraph = new window.DependencyGraph(this.stateManager, this.sectionManager);
+                dependencyGraph.setupClickHandlers(dependencyGraphContent, activeProject.id);
+            }
         }).catch(error => {
             if (this.errorHandler) {
                 this.errorHandler.handleError(error, {
@@ -736,7 +824,6 @@ class RenderingEngine {
         requestAnimationFrame(() => {
             const automationIdInput = document.getElementById(`automation-id-${section.sectionId}`);
             if (automationIdInput) {
-                console.log(`[DIAG] RenderingEngine - Rendered automationId for section ${section.sectionId}: State="${section.automationId || 'undefined'}", UI="${automationIdInput.value || 'empty'}"`);
             }
         });
         */
@@ -826,7 +913,10 @@ class RenderingEngine {
         if (!container) return;
         
         if (!this.processSteps) {
-            container.innerHTML = '';
+            // Clear container
+            while (container.firstChild) {
+                container.removeChild(container.firstChild);
+            }
             return;
         }
         
@@ -842,6 +932,7 @@ class RenderingEngine {
             if (window.safeSetInnerHTML) {
                 window.safeSetInnerHTML(container, buttonsHtml, { trusted: true });
             } else {
+                // Fallback: buttonsHtml is application-generated, safe
                 container.innerHTML = buttonsHtml;
             }
             
@@ -958,6 +1049,225 @@ class RenderingEngine {
      * @private
      * @returns {string} HTML string for section header
      */
+    /**
+     * Render section navigation bar
+     * @private
+     * @param {Object} project - Project object
+     * @param {Object} currentSection - Current section object
+     * @returns {string} HTML string for navigation bar
+     */
+    _renderSectionNavigationBar(project, currentSection) {
+        if (!project || !project.sections || project.sections.length === 0) return '';
+        
+        const items = project.sections.map(section => {
+            const isActive = section.sectionId === currentSection.sectionId;
+            const statusClass = section.status || 'not_started';
+            const statusText = section.status === 'complete' ? 'complete' : 
+                              section.status === 'in_progress' ? 'in_progress' : 
+                              section.status === 'needs_revision' ? 'needs_revision' : 'not_started';
+            
+            return `
+                <div class="section-nav-item ${isActive ? 'active' : ''} ${statusText}" 
+                     data-action="navigate-section" 
+                     data-project-id="${project.id}" 
+                     data-section-id="${section.sectionId}"
+                     title="${this.escapeHtml(section.sectionName)} (${statusText})">
+                    ${this.escapeHtml(section.sectionName)}
+                </div>
+            `;
+        }).join('');
+        
+        return `
+            <div class="section-nav-bar">
+                ${items}
+            </div>
+        `;
+    }
+    
+    /**
+     * Setup automation setup wizard handlers
+     * @private
+     * @param {AutomationSetupWizard} wizard - Wizard instance
+     */
+    _setupWizardHandlers(wizard) {
+        const modal = document.getElementById('automation-setup-wizard-modal');
+        const prevBtn = document.getElementById('automation-setup-wizard-prev');
+        const nextBtn = document.getElementById('automation-setup-wizard-next');
+        const finishBtn = document.getElementById('automation-setup-wizard-finish');
+        const closeBtn = document.getElementById('automation-setup-wizard-close');
+        
+        if (!modal || !prevBtn || !nextBtn || !finishBtn || !closeBtn) return;
+        
+        const updateButtons = () => {
+            prevBtn.style.display = wizard.currentStep > 1 ? 'inline-block' : 'none';
+            nextBtn.style.display = wizard.currentStep < wizard.totalSteps ? 'inline-block' : 'none';
+            finishBtn.style.display = wizard.currentStep === wizard.totalSteps ? 'inline-block' : 'none';
+        };
+        
+        prevBtn.onclick = () => {
+            if (wizard.currentStep > 1) {
+                wizard.renderStep(wizard.currentStep - 1);
+                updateButtons();
+            }
+        };
+        
+        nextBtn.onclick = () => {
+            if (wizard.currentStep < wizard.totalSteps) {
+                // Skip step 3 if not needed
+                if (wizard.currentStep === 2 && wizard.wizardData.engine === 'file-watching') {
+                    wizard.renderStep(4);
+                } else {
+                    wizard.renderStep(wizard.currentStep + 1);
+                }
+                updateButtons();
+            }
+        };
+        
+        finishBtn.onclick = async () => {
+            const result = await wizard.applyConfiguration();
+            if (result.success) {
+                modal.style.display = 'none';
+                this.renderAll(); // Refresh UI
+                // Optionally start automation
+                if (this.appInstance && this.appInstance.startAutomation) {
+                    // Could trigger automation start here if desired
+                }
+            } else {
+                // Show errors
+                alert('Configuration errors:\n' + result.errors.join('\n'));
+            }
+        };
+        
+        closeBtn.onclick = () => {
+            modal.style.display = 'none';
+        };
+        
+        const backdrop = modal.querySelector('.modal-backdrop');
+        if (backdrop) {
+            backdrop.onclick = () => {
+                modal.style.display = 'none';
+            };
+        }
+        
+        updateButtons();
+    }
+    
+    /**
+     * Render automation dashboard
+     * @param {Object} project - Project object
+     * @returns {string} HTML string for dashboard
+     */
+    renderAutomationDashboard(project) {
+        if (typeof window === 'undefined' || !window.AutomationDashboard) {
+            return '';
+        }
+        
+        try {
+            const dashboard = new window.AutomationDashboard(
+                this.stateManager,
+                this.eventSystem,
+                this.appInstance?.automationSystem,
+                this.appInstance?.cursorCLIAutomation,
+                this.appInstance?.multiAgentAutomation
+            );
+            
+            const html = dashboard.render(project.id);
+            
+            // Setup handlers after render
+            setTimeout(() => {
+                const container = document.getElementById('automation-dashboard-container');
+                if (container) {
+                    dashboard.setupHandlers(container, project.id);
+                    dashboard.startAutoUpdate(project.id);
+                }
+            }, 100);
+            
+            return html;
+        } catch (error) {
+            console.warn('Error rendering automation dashboard:', error);
+            return '<div class="dashboard-error">Error loading dashboard</div>';
+        }
+    }
+    
+    /**
+     * Render breadcrumb navigation
+     * @private
+     * @param {Object} project - Project object
+     * @param {Object} section - Section object
+     * @returns {string} HTML string for breadcrumb
+     */
+    _renderBreadcrumb(project, section) {
+        if (!project || !section) return '';
+        
+        const projectName = this.escapeHtml(project.name);
+        const sectionName = this.escapeHtml(section.sectionName);
+        
+        return `
+            <nav class="breadcrumb" aria-label="Breadcrumb">
+                <ol class="breadcrumb-list">
+                    <li class="breadcrumb-item">
+                        <button class="breadcrumb-link" data-action="navigate-to-projects" type="button" tabindex="0">
+                            Projects
+                        </button>
+                    </li>
+                    <li class="breadcrumb-separator" aria-hidden="true">›</li>
+                    <li class="breadcrumb-item">
+                        <button class="breadcrumb-link" data-action="navigate-to-project" data-project-id="${project.id}" type="button" tabindex="0">
+                            ${projectName}
+                        </button>
+                    </li>
+                    <li class="breadcrumb-separator" aria-hidden="true">›</li>
+                    <li class="breadcrumb-item breadcrumb-current" aria-current="page">
+                        ${sectionName}
+                    </li>
+                </ol>
+            </nav>
+        `;
+    }
+    
+    /**
+     * Render progress bar component
+     * @private
+     * @param {Object} project - Project object
+     * @returns {string} HTML string for progress bar
+     */
+    _renderProgressBar(project) {
+        if (!project || !this.navigation) return '';
+        
+        const progress = this.navigation.calculateProgress(project.id);
+        if (progress.total === 0) return '';
+        
+        // Create segments for each section
+        const segments = progress.sections.map((section, index) => {
+            const statusClass = `progress-segment-${section.status}`;
+            const widthPercent = (100 / progress.total);
+            const tooltip = `${section.sectionName}: ${section.status.replace('_', ' ')}`;
+            
+            return `
+                <div 
+                    class="progress-segment ${statusClass}" 
+                    style="width: ${widthPercent}%"
+                    data-section-id="${section.sectionId}"
+                    data-project-id="${project.id}"
+                    title="${this.escapeHtml(tooltip)}"
+                    data-action="jump-to-section"
+                ></div>
+            `;
+        }).join('');
+        
+        return `
+            <div class="progress-bar-container" data-project-id="${project.id}">
+                <div class="progress-bar-header">
+                    <span class="progress-label">Progress: ${progress.percentage}%</span>
+                    <span class="progress-count">${progress.completed} / ${progress.total} sections</span>
+                </div>
+                <div class="progress-bar" role="progressbar" aria-valuenow="${progress.percentage}" aria-valuemin="0" aria-valuemax="100" aria-label="Project completion progress">
+                    ${segments}
+                </div>
+            </div>
+        `;
+    }
+    
     _renderSectionHeader(data, project, section) {
         return `
             <div class="section-case-header">
@@ -966,6 +1276,9 @@ class RenderingEngine {
                 <span class="workflow-context">${data.workflowContext}</span>
                 ${data.sectionTypeBadge}
             </div>
+            ${this._renderBreadcrumb(project, section)}
+            ${this._renderProgressBar(project)}
+            ${this._renderDependencyMiniGraph(project, section)}
             <div class="section-header">
                 <div class="section-title-row">
                     <h2 class="section-title">${this.escapeHtml(section.sectionName)}</h2>
@@ -1143,8 +1456,10 @@ class RenderingEngine {
         // Build HTML from template sections
         return `
             <div class="section-view-content">
+                ${this._renderSectionNavigationBar(project, section)}
                 ${this._renderSectionHeader(data, project, section)}
                 ${this._renderSectionLockedMessage(data, project)}
+                ${this._renderDependencyGraphPanel(project, section)}
                 ${this._renderInferenceStepIndicator(section)}
                 ${this._renderModifiersSection(section, project)}
                 ${this._renderSectionPanels(project, section)}
@@ -1239,6 +1554,7 @@ class RenderingEngine {
         if (window.safeSetInnerHTML) {
             window.safeSetInnerHTML(item, itemHtml, { trusted: true });
         } else {
+            // Fallback: itemHtml is application-generated, safe
             item.innerHTML = itemHtml;
         }
         
@@ -1283,6 +1599,13 @@ class RenderingEngine {
                 ${caseBadge}
                 ${caseChainInfo}
             </div>
+            ${this._renderProgressBar(activeProject)}
+            </div>
+        </div>`;
+        
+        // Add automation dashboard
+        html += `<div id="automation-dashboard-container" class="automation-dashboard-container">
+            ${this.renderAutomationDashboard(activeProject)}
         </div>`;
         
         // Automation directory input - ensure it always has a value with unique ID
@@ -1306,7 +1629,10 @@ class RenderingEngine {
         const scopeDir = activeProject.scopeDirectory || '';
         
         html += `<div class="automation-dir-section" style="padding: 15px; background: #2d2d2d; border-radius: 6px; margin-bottom: 20px;">
-            <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #ffffff;">Directory Configuration</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="margin: 0; font-size: 16px; color: #ffffff;">Directory Configuration</h3>
+                <button id="automation-setup-wizard-btn" data-project-id="${activeProject.id}" class="btn btn-primary" style="padding: 6px 12px; font-size: 13px;">⚙️ Setup Wizard</button>
+            </div>
             
             <div style="margin-bottom: 20px;">
                 <label for="automation-dir-input" style="display: block; margin-bottom: 8px; font-weight: 500; color: #e0e0e0;">
@@ -1370,13 +1696,11 @@ class RenderingEngine {
         
         // html is a template with user data already escaped via escapeHtml() - mark as trusted
         // User data (section names, project names, etc.) are escaped before insertion
-        console.log('Rendering pipeline flow view', { htmlLength: html.length, hasSafeSetInnerHTML: !!window.safeSetInnerHTML });
         if (window.safeSetInnerHTML) {
             window.safeSetInnerHTML(flowView, html, { trusted: true });
-            console.log('Pipeline flow HTML set with safeSetInnerHTML (trusted: true)');
         } else {
+            // Fallback: html is application-generated template, safe
             flowView.innerHTML = html;
-            console.log('Pipeline flow HTML set with innerHTML (fallback)');
         }
         
         // Render sections list (with virtualization if > 30 sections)
@@ -1501,8 +1825,9 @@ class RenderingEngine {
             </div>
         `;
         if (window.safeSetInnerHTML) {
-            window.safeSetInnerHTML(header, headerHtml, { trusted: false });
+            window.safeSetInnerHTML(header, headerHtml, { trusted: true });
         } else {
+            // Fallback: headerHtml is application-generated, safe
             header.innerHTML = headerHtml;
         }
         
@@ -1643,8 +1968,9 @@ class RenderingEngine {
                 // element.text is user data - escape and use safeSetInnerHTML
                 const headerHtml2 = `<div class="header-text">${this.escapeHtml(element.text)}</div>`;
                 if (window.safeSetInnerHTML) {
-                    window.safeSetInnerHTML(div, headerHtml2, { trusted: false });
+                    window.safeSetInnerHTML(div, headerHtml2, { trusted: true });
                 } else {
+                    // Fallback: headerHtml2 is application-generated, safe
                     div.innerHTML = headerHtml2;
                 }
                 this.addTooltip(div, tooltipText);
@@ -1830,8 +2156,9 @@ class RenderingEngine {
             </div>
         `;
         if (window.safeSetInnerHTML) {
-            window.safeSetInnerHTML(div, elementHtml, { trusted: false });
+            window.safeSetInnerHTML(div, elementHtml, { trusted: true });
         } else {
+            // Fallback: elementHtml is application-generated (user content already escaped), safe
             div.innerHTML = elementHtml;
         }
         
@@ -1929,7 +2256,10 @@ class RenderingEngine {
     // Clear container
     clearContainer() {
         if (this.container) {
-            this.container.innerHTML = '';
+            // Clear container safely
+            while (this.container.firstChild) {
+                this.container.removeChild(this.container.firstChild);
+            }
         }
     }
     

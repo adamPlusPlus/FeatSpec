@@ -46,7 +46,9 @@ class VirtualList {
      */
     init() {
         // Clear container
-        this.container.innerHTML = '';
+        while (this.container.firstChild) {
+            this.container.removeChild(this.container.firstChild);
+        }
         
         // Create wrapper for scrolling
         this.wrapper = document.createElement('div');

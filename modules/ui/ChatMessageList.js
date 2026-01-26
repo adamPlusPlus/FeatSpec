@@ -50,7 +50,9 @@ export class ChatMessageList {
         }
         
         // Clear existing messages - safe
-        this.messageListElement.innerHTML = '';
+        while (this.messageListElement.firstChild) {
+            this.messageListElement.removeChild(this.messageListElement.firstChild);
+        }
         
         // Render each message
         for (const message of this.messages) {
@@ -114,6 +116,7 @@ export class ChatMessageList {
         if (typeof window !== 'undefined' && window.safeSetInnerHTML) {
             window.safeSetInnerHTML(messageElement, messageHtml, { allowMarkdown: true });
         } else {
+            // Fallback: messageHtml contains formatted content (already sanitized by MessageFormatter)
             messageElement.innerHTML = messageHtml;
         }
         
@@ -135,7 +138,7 @@ export class ChatMessageList {
         loadingElement.className = 'chat-message chat-message-loading';
         loadingElement.id = 'chat-loading-indicator';
         // Static loading indicator - safe
-        loadingElement.innerHTML = `
+        const loadingHtml = `
             <div class="chat-message-header">
                 <span class="chat-message-role">Assistant</span>
             </div>
@@ -144,6 +147,11 @@ export class ChatMessageList {
                 <span style="margin-left: 8px; color: #888;">Thinking...</span>
             </div>
         `;
+        if (window.safeSetInnerHTML) {
+            window.safeSetInnerHTML(loadingElement, loadingHtml, { trusted: true });
+        } else {
+            loadingElement.innerHTML = loadingHtml;
+        }
         
         this.messageListElement.appendChild(loadingElement);
         this.scrollToBottom();
@@ -212,9 +220,11 @@ export class ChatMessageList {
      * @returns {string} Escaped text
      */
     escapeHtml(text) {
+        // This function returns HTML string, not setting innerHTML
+        // Create element, set textContent (escapes HTML), then return innerHTML
         const div = document.createElement('div');
         div.textContent = text;
-        return div.innerHTML;
+        return div.innerHTML; // Safe: textContent already escaped any HTML
     }
     
     /**
@@ -265,7 +275,13 @@ export class ChatMessageList {
         if (messageElement) {
             const contentElement = messageElement.querySelector('.chat-message-content');
             if (contentElement) {
-                contentElement.innerHTML = renderMarkdown(content);
+                // renderMarkdown returns sanitized HTML
+                const markdownHtml = renderMarkdown(content);
+                if (window.safeSetInnerHTML) {
+                    window.safeSetInnerHTML(contentElement, markdownHtml, { allowMarkdown: true });
+                } else {
+                    contentElement.innerHTML = markdownHtml;
+                }
             }
             
             // Update in messages array

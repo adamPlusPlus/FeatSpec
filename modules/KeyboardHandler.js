@@ -113,6 +113,100 @@ class KeyboardHandler {
             enabled: true
         });
         
+        // Ctrl+J / Cmd+J for quick jump dialog
+        this.registerShortcut({
+            key: 'j',
+            ctrl: true,
+            shift: false,
+            alt: false,
+            meta: false
+        }, {
+            handler: () => {
+                if (this.appInstance && this.appInstance.showQuickJumpDialog) {
+                    this.appInstance.showQuickJumpDialog();
+                }
+            },
+            description: 'Quick jump to section',
+            enabled: true
+        });
+        
+        // Ctrl+Shift+N / Cmd+Shift+N for next incomplete section
+        this.registerShortcut({
+            key: 'n',
+            ctrl: true,
+            shift: true,
+            alt: false,
+            meta: false
+        }, {
+            handler: () => {
+                const activeProject = this.stateManager.getActiveProject();
+                if (activeProject && this.navigation) {
+                    const firstIncomplete = this.navigation.getFirstIncompleteSection(activeProject.id);
+                    if (firstIncomplete && this.sectionManager) {
+                        const sectionId = firstIncomplete.id || firstIncomplete.sectionId;
+                        this.sectionManager.navigateToSection(activeProject.id, sectionId);
+                    }
+                }
+            },
+            description: 'Next incomplete section',
+            enabled: true
+        });
+        
+        // Ctrl+Shift+P / Cmd+Shift+P for previous incomplete section
+        this.registerShortcut({
+            key: 'p',
+            ctrl: true,
+            shift: true,
+            alt: false,
+            meta: false
+        }, {
+            handler: () => {
+                const activeProject = this.stateManager.getActiveProject();
+                if (activeProject && this.renderingEngine && this.renderingEngine.activeSectionId) {
+                    // Find previous incomplete section
+                    const currentIndex = activeProject.sections.findIndex(s => s.sectionId === this.renderingEngine.activeSectionId);
+                    for (let i = currentIndex - 1; i >= 0; i--) {
+                        const section = activeProject.sections[i];
+                        if (section.status !== 'complete' && section.status !== 'skipped') {
+                            if (this.sectionManager) {
+                                this.sectionManager.navigateToSection(activeProject.id, section.sectionId);
+                            }
+                            break;
+                        }
+                    }
+                }
+            },
+            description: 'Previous incomplete section',
+            enabled: true
+        });
+        
+        // Ctrl+G / Cmd+G for go to section by number
+        this.registerShortcut({
+            key: 'g',
+            ctrl: true,
+            shift: false,
+            alt: false,
+            meta: false
+        }, {
+            handler: () => {
+                const activeProject = this.stateManager.getActiveProject();
+                if (activeProject && activeProject.sections.length > 0) {
+                    const sectionNum = prompt(`Enter section number (1-${activeProject.sections.length}):`);
+                    if (sectionNum) {
+                        const num = parseInt(sectionNum);
+                        if (num >= 1 && num <= activeProject.sections.length) {
+                            const section = activeProject.sections[num - 1];
+                            if (this.sectionManager) {
+                                this.sectionManager.navigateToSection(activeProject.id, section.sectionId);
+                            }
+                        }
+                    }
+                }
+            },
+            description: 'Go to section by number',
+            enabled: true
+        });
+        
         // Ctrl+V for validation loop
         this.registerShortcut({
             key: 'v',

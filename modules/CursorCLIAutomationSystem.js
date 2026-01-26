@@ -79,7 +79,26 @@ class CursorCLIAutomationSystem {
             this.appendToLog(`✗ Error in ${section.sectionName || section.sectionId}: ${error.message}`);
             this.updateProgress(`Error: ${error.message}`, '');
             // Stop execution on error
-            alert(`Error executing ${section.sectionName || section.sectionId}: ${error.message}\n\nExecution stopped.`);
+            const errorMsg = `Error executing ${section.sectionName || section.sectionId}: ${error.message}\n\nExecution stopped.`;
+            if (this.errorHandler) {
+                this.errorHandler.showUserNotification(errorMsg, {
+                    source: 'CursorCLIAutomationSystem',
+                    operation: 'executeSection',
+                    projectId,
+                    sectionId: section.sectionId
+                }, {
+                    severity: ErrorHandler.Severity.ERROR,
+                    title: 'Execution Error',
+                    showModal: true,
+                    actions: [
+                        { label: 'Retry Section', action: () => this.executeSection(projectId, section) },
+                        { label: 'Continue', action: () => {} },
+                        { label: 'Stop', action: () => this.stop() }
+                    ]
+                });
+            } else {
+                alert(errorMsg);
+            }
             return false;
         }
     }
@@ -102,7 +121,20 @@ class CursorCLIAutomationSystem {
         // Validate before starting
         const validation = this._validateBeforeStart(project, scopeDir);
         if (!validation.valid) {
-            alert(validation.message + (validation.missingDeps?.length > 0 ? `\n\nMissing dependencies:\n${validation.missingDeps.join('\n')}` : ''));
+            const errorMsg = validation.message + (validation.missingDeps?.length > 0 ? `\n\nMissing dependencies:\n${validation.missingDeps.join('\n')}` : '');
+            if (this.errorHandler) {
+                this.errorHandler.showUserNotification(errorMsg, {
+                    source: 'CursorCLIAutomationSystem',
+                    operation: 'start',
+                    projectId
+                }, {
+                    severity: ErrorHandler.Severity.ERROR,
+                    title: 'Validation Failed',
+                    showModal: true
+                });
+            } else {
+                alert(errorMsg);
+            }
             return;
         }
         
@@ -146,7 +178,23 @@ class CursorCLIAutomationSystem {
                 console.error('Error in cursor-cli automation:', error);
             }
             this.updateProgress(`Fatal error: ${errorMsg}`, '');
-            alert(`Fatal error: ${errorMsg}`);
+            if (this.errorHandler) {
+                this.errorHandler.showUserNotification(`Fatal error: ${errorMsg}`, {
+                    source: 'CursorCLIAutomationSystem',
+                    operation: 'start',
+                    projectId
+                }, {
+                    severity: ErrorHandler.Severity.CRITICAL,
+                    title: 'Fatal Automation Error',
+                    showModal: true,
+                    actions: [
+                        { label: 'Retry', action: () => this.start(projectId, scopeDirectory) },
+                        { label: 'OK', action: () => {} }
+                    ]
+                });
+            } else {
+                alert(`Fatal error: ${errorMsg}`);
+            }
         } finally {
             this.isRunning = false;
             this.currentProjectId = null;
@@ -322,7 +370,9 @@ class CursorCLIAutomationSystem {
             
             // Clear log
             if (this.progressLog) {
-                this.progressLog.innerHTML = ''; // Clearing - safe
+                while (this.progressLog.firstChild) {
+                    this.progressLog.removeChild(this.progressLog.firstChild);
+                }
             }
         }
     }

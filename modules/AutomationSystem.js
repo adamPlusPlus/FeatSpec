@@ -66,7 +66,23 @@ class AutomationSystem {
                 }, { source: 'AutomationSystem', operation: 'fallbackDirectoryAccess' });
                 
                 if (!fallbackResult.success) {
-                    alert(this.errorHandler.getUserMessage(fallbackResult) || 'Failed to setup directory watching. Make sure the server supports file watching or your browser supports File System Access API.');
+                    const errorMsg = this.errorHandler.getUserMessage(fallbackResult) || 'Failed to setup directory watching. Make sure the server supports file watching or your browser supports File System Access API.';
+                    if (this.errorHandler) {
+                        this.errorHandler.showUserNotification(errorMsg, {
+                            source: 'AutomationSystem',
+                            operation: 'setupDirectoryWatching',
+                            projectId
+                        }, {
+                            severity: ErrorHandler.Severity.ERROR,
+                            title: 'Directory Setup Failed',
+                            actions: [
+                                { label: 'Retry', action: () => this._setupDirectoryWatching(projectId, automationDir) },
+                                { label: 'Cancel', action: () => {} }
+                            ]
+                        });
+                    } else {
+                        alert(errorMsg);
+                    }
                     return false;
                 }
             }
@@ -105,7 +121,23 @@ class AutomationSystem {
                     this.targetDirectory = directoryHandle;
                     return true;
                 } catch (fallbackError) {
-                    alert('Failed to setup directory watching. Make sure the server supports file watching or your browser supports File System Access API.');
+                    const errorMsg = 'Failed to setup directory watching. Make sure the server supports file watching or your browser supports File System Access API.';
+                    if (this.errorHandler) {
+                        this.errorHandler.showUserNotification(errorMsg, {
+                            source: 'AutomationSystem',
+                            operation: 'setupDirectoryWatching',
+                            projectId
+                        }, {
+                            severity: ErrorHandler.Severity.ERROR,
+                            title: 'Directory Setup Failed',
+                            actions: [
+                                { label: 'Retry', action: () => this._setupDirectoryWatching(projectId, automationDir) },
+                                { label: 'Cancel', action: () => {} }
+                            ]
+                        });
+                    } else {
+                        alert(errorMsg);
+                    }
                     return false;
                 }
             }
@@ -137,7 +169,23 @@ class AutomationSystem {
             }, { source: 'AutomationSystem', operation: 'start', projectId });
             
             if (!startResult.success) {
-                alert(this.errorHandler.getUserMessage(startResult) || 'Failed to start automation: ' + startResult.error);
+                const errorMsg = this.errorHandler.getUserMessage(startResult) || 'Failed to start automation: ' + startResult.error;
+                if (this.errorHandler) {
+                    this.errorHandler.showUserNotification(errorMsg, {
+                        source: 'AutomationSystem',
+                        operation: 'start',
+                        projectId
+                    }, {
+                        severity: ErrorHandler.Severity.ERROR,
+                        title: 'Failed to Start Automation',
+                        actions: [
+                            { label: 'Retry', action: () => this.start(projectId) },
+                            { label: 'OK', action: () => {} }
+                        ]
+                    });
+                } else {
+                    alert(errorMsg);
+                }
                 this.isRunning = false;
                 return false;
             }
@@ -177,7 +225,22 @@ class AutomationSystem {
                     });
                 } else {
                     console.error('Failed to start automation:', error);
-                    alert('Failed to start automation: ' + error.message);
+                    if (this.errorHandler) {
+                        this.errorHandler.showUserNotification('Failed to start automation: ' + error.message, {
+                            source: 'AutomationSystem',
+                            operation: 'start',
+                            projectId
+                        }, {
+                            severity: ErrorHandler.Severity.ERROR,
+                            title: 'Failed to Start Automation',
+                            actions: [
+                                { label: 'Retry', action: () => this.start(projectId) },
+                                { label: 'OK', action: () => {} }
+                            ]
+                        });
+                    } else {
+                        alert('Failed to start automation: ' + error.message);
+                    }
                 }
                 this.isRunning = false;
                 return false;
@@ -207,14 +270,45 @@ class AutomationSystem {
         // Just use the first section as the starting point
         const startingSection = firstIncomplete || project.sections[0];
         if (!startingSection) {
-            alert('No sections found in project.');
+            const errorMsg = 'No sections found in project. Please create sections before starting automation.';
+            if (this.errorHandler) {
+                this.errorHandler.showUserNotification(errorMsg, {
+                    source: 'AutomationSystem',
+                    operation: 'start',
+                    projectId
+                }, {
+                    severity: ErrorHandler.Severity.WARNING,
+                    title: 'No Sections Available'
+                });
+            } else {
+                alert(errorMsg);
+            }
             return;
         }
         
         // Check if directory is set in project (text-based)
         const automationDir = project.automationDirectory;
         if (!automationDir) {
-            alert('Please set the automation directory in the Pipeline Flow view before starting automation.');
+            const errorMsg = 'Please set the automation directory in the Pipeline Flow view before starting automation.';
+            if (this.errorHandler) {
+                this.errorHandler.showUserNotification(errorMsg, {
+                    source: 'AutomationSystem',
+                    operation: 'start',
+                    projectId
+                }, {
+                    severity: ErrorHandler.Severity.WARNING,
+                    title: 'Automation Directory Required',
+                    actions: [
+                        { label: 'Open Pipeline Flow', action: () => {
+                            const viewPipelineBtn = document.getElementById('view-pipeline');
+                            if (viewPipelineBtn) viewPipelineBtn.click();
+                        }},
+                        { label: 'OK', action: () => {} }
+                    ]
+                });
+            } else {
+                alert(errorMsg);
+            }
             return;
         }
         

@@ -93,6 +93,76 @@
         </div>
     </div>
     
+    <!-- Automation Setup Wizard -->
+    <div id="automation-setup-wizard-modal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content wizard-content">
+            <div class="modal-header">
+                <h2>Automation Setup Wizard</h2>
+                <button id="automation-setup-wizard-close" class="close-btn">×</button>
+            </div>
+            <div id="automation-setup-wizard-steps" class="wizard-steps">
+                <!-- Step indicators will be loaded dynamically -->
+            </div>
+            <div id="automation-setup-wizard-body" class="wizard-body">
+                <!-- Step content will be loaded dynamically -->
+            </div>
+            <div class="modal-footer wizard-footer">
+                <button id="automation-setup-wizard-prev" class="btn btn-secondary" style="display: none;">← Previous</button>
+                <button id="automation-setup-wizard-next" class="btn btn-primary">Next →</button>
+                <button id="automation-setup-wizard-finish" class="btn btn-primary" style="display: none;">Start Automation</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Quick Start Wizard -->
+    <div id="quick-start-wizard-modal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content wizard-content">
+            <div class="modal-header">
+                <h2>Quick Start Wizard</h2>
+                <button id="quick-start-wizard-close" class="close-btn">×</button>
+            </div>
+            <div id="quick-start-wizard-steps" class="wizard-steps">
+                <!-- Step indicators will be loaded dynamically -->
+            </div>
+            <div id="quick-start-wizard-body" class="wizard-body">
+                <!-- Step content will be loaded dynamically -->
+            </div>
+            <div class="modal-footer wizard-footer">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <label class="wizard-dont-show">
+                        <input type="checkbox" id="quick-start-wizard-dont-show">
+                        <span>Don't show this again</span>
+                    </label>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button id="quick-start-wizard-skip" class="btn btn-secondary">Skip</button>
+                    <button id="quick-start-wizard-prev" class="btn btn-secondary" style="display: none;">← Previous</button>
+                    <button id="quick-start-wizard-next" class="btn btn-primary">Next →</button>
+                    <button id="quick-start-wizard-finish" class="btn btn-primary" style="display: none;">Create Project</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Quick Jump Dialog -->
+    <div id="quick-jump-modal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content quick-jump-content">
+            <div class="modal-header">
+                <h2>Quick Jump to Section</h2>
+                <button id="quick-jump-close" class="close-btn">×</button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="quick-jump-search" class="quick-jump-search" placeholder="Search sections..." autocomplete="off">
+                <div id="quick-jump-list" class="quick-jump-list">
+                    <!-- Sections will be loaded dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <!-- Reference Documents Panel -->
     <aside class="references-panel" id="references-panel" style="display: none;">
         <div class="panel-header">
@@ -200,8 +270,27 @@
                 <h2>Select Case</h2>
                 <button id="case-selection-close" class="close-btn">×</button>
             </div>
-            <div id="case-selection-body" class="case-selection-body">
-                <!-- Cases will be loaded dynamically -->
+            <div class="case-selection-layout">
+                <div id="case-selection-body" class="case-selection-body">
+                    <!-- Cases will be loaded dynamically -->
+                </div>
+                <div id="case-selection-preview" class="case-selection-preview">
+                    <div class="preview-placeholder">
+                        <p>Select a case to see section preview</p>
+                    </div>
+                </div>
+            </div>
+            <div class="template-selection" style="padding: 20px; border-top: 1px solid #404040;">
+                <h3 style="margin-top: 0; margin-bottom: 12px;">Project Template (Optional)</h3>
+                <div id="template-options" style="display: flex; flex-direction: column; gap: 8px;">
+                    <div class="template-option selected" data-template="empty">
+                        <span class="template-icon">📄</span>
+                        <div class="template-info">
+                            <span class="template-name">Empty Project</span>
+                            <span class="template-description">Start with a blank project</span>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="automation-engine-selection" style="padding: 20px; border-top: 1px solid #404040;">
                 <h3 style="margin-top: 0; margin-bottom: 12px;">Automation Engine</h3>
@@ -373,6 +462,8 @@
                 </div>
             </div>
             <div class="modal-footer">
+                <button id="automation-pause" class="btn btn-secondary" style="display: none;">⏸️ Pause</button>
+                <button id="automation-resume" class="btn btn-secondary" style="display: none;">▶️ Resume</button>
                 <button id="automation-stop" class="btn btn-secondary" style="display: none;">⏹️ Stop</button>
                 <button id="automation-start" class="btn btn-primary">▶️ Start Automation</button>
             </div>
@@ -388,15 +479,44 @@
                 <button id="cursor-cli-close" class="close-btn">×</button>
             </div>
             <div class="modal-body">
-                <div id="cursor-cli-progress-text" style="margin-bottom: 15px;">
-                    Initializing...
+                <div class="automation-progress-section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span id="cursor-cli-progress-text" style="font-weight: 500; color: #4CAF50;">Initializing...</span>
+                        <span id="cursor-cli-progress-percentage" style="font-size: 14px; color: #888;">0%</span>
+                    </div>
+                    <div class="automation-progress-bar-container">
+                        <div id="cursor-cli-progress-bar" class="automation-progress-bar" style="width: 0%;"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 12px; color: #888; margin-top: 4px;">
+                        <span id="cursor-cli-time-elapsed">Time: 0s</span>
+                        <span id="cursor-cli-time-estimate">Est: --</span>
+                    </div>
                 </div>
-                <div style="background: #2d2d2d; border-radius: 4px; padding: 10px; font-family: monospace; font-size: 0.9em; max-height: 200px; overflow-y: auto;">
-                    <div id="cursor-cli-progress-log"></div>
+                
+                <div class="automation-steps-section" style="margin: 15px 0;">
+                    <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #e0e0e0;">Steps</h3>
+                    <div id="cursor-cli-steps-list" class="automation-steps-list">
+                        <div style="color: #888; font-size: 0.9em;">Loading steps...</div>
+                    </div>
                 </div>
-                <button id="cursor-cli-cancel" class="btn btn-secondary" style="margin-top: 15px;">
-                    Cancel
-                </button>
+                
+                <div style="margin: 15px 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <h3 style="margin: 0; font-size: 14px; color: #e0e0e0;">Detailed Log</h3>
+                        <button id="cursor-cli-toggle-log" class="btn-icon" style="padding: 4px 8px; font-size: 12px;">Show</button>
+                    </div>
+                    <div id="cursor-cli-progress-log-container" style="display: none; background: #2d2d2d; border-radius: 4px; padding: 10px; font-family: monospace; font-size: 0.9em; max-height: 200px; overflow-y: auto;">
+                        <div id="cursor-cli-progress-log"></div>
+                    </div>
+                </div>
+                
+                <div style="display: flex; gap: 8px; margin-top: 15px;">
+                    <button id="cursor-cli-pause" class="btn btn-secondary" style="display: none;">⏸️ Pause</button>
+                    <button id="cursor-cli-resume" class="btn btn-secondary" style="display: none;">▶️ Resume</button>
+                    <button id="cursor-cli-cancel" class="btn btn-secondary">
+                        Cancel
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -409,9 +529,27 @@
                 <button id="multi-agent-close" class="close-btn">×</button>
             </div>
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 15px; max-height: calc(90vh - 120px); overflow-y: auto;">
-                <!-- Status Section -->
-                <div id="multi-agent-progress-text" style="font-weight: 500; color: #4CAF50;">
-                    Initializing...
+                <!-- Progress Bar Section -->
+                <div class="automation-progress-section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span id="multi-agent-progress-text" style="font-weight: 500; color: #4CAF50;">Initializing...</span>
+                        <span id="multi-agent-progress-percentage" style="font-size: 14px; color: #888;">0%</span>
+                    </div>
+                    <div class="automation-progress-bar-container">
+                        <div id="multi-agent-progress-bar" class="automation-progress-bar" style="width: 0%;"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 12px; color: #888; margin-top: 4px;">
+                        <span id="multi-agent-time-elapsed">Time: 0s</span>
+                        <span id="multi-agent-time-estimate">Est: --</span>
+                    </div>
+                </div>
+                
+                <!-- Steps List Section -->
+                <div class="multi-agent-section">
+                    <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #e0e0e0;">Steps Progress</h3>
+                    <div id="multi-agent-steps-list" class="automation-steps-list">
+                        <div style="color: #888; font-size: 0.9em;">Loading steps...</div>
+                    </div>
                 </div>
                 
                 <!-- Active Agents Section -->
@@ -564,6 +702,12 @@
     <script src="modules/utils/ErrorHandler.js"></script>
     <script src="modules/utils/HtmlSanitizer.js"></script>
     <script src="modules/utils/InputValidator.js"></script>
+    <script src="modules/utils/ProjectGroupValidator.js"></script>
+    <script src="modules/templates/ProjectTemplates.js"></script>
+    <script src="modules/ui/DependencyGraph.js"></script>
+    <script src="modules/ui/AutomationSetupWizard.js"></script>
+    <script src="modules/ui/AutomationDashboard.js"></script>
+    <script src="modules/ui/QuickStartWizard.js"></script>
     <script src="modules/utils/StateUpdateHelper.js"></script>
     <script src="modules/utils/DebouncedSave.js"></script>
     <script src="modules/utils/EventListenerManager.js"></script>

@@ -1,0 +1,20 @@
+Fix missing _renderDependencyMiniGraph method in RenderingEngine
+
+## Summary
+Fixed rendering error where _renderDependencyMiniGraph method was missing from RenderingEngine.js, causing repeated errors on page load.
+
+## Changes
+- Added `_renderDependencyMiniGraph` method to RenderingEngine.js
+- Method uses DependencyGraph class to render mini dependency graph
+- Added click handler setup for mini graph items
+- Added data-project-id attribute to mini graph container for proper handler setup
+
+## Fix Details
+The method was being called in `_renderSectionHeader` but was never implemented. The fix:
+1. Creates a DependencyGraph instance
+2. Calls renderMiniGraph to get HTML
+3. Injects data-project-id attribute for click handler setup
+4. Sets up click handlers after section view is rendered
+
+## Error Fixed
+- "[RenderingEngine] this._renderDependencyMiniGraph is not a function" - resolved

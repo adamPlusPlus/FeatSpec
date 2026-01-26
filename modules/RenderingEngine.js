@@ -790,11 +790,18 @@ class RenderingEngine {
             // Load input placeholder asynchronously
             this.loadInputPlaceholder(activeProject, section);
             
-            // Setup dependency graph click handlers
+            // Setup dependency graph click handlers (full graph)
             const dependencyGraphContent = document.getElementById(`dependency-graph-content-${activeProject.id}`);
             if (dependencyGraphContent && typeof window !== 'undefined' && window.DependencyGraph) {
                 const dependencyGraph = new window.DependencyGraph(this.stateManager, this.sectionManager);
                 dependencyGraph.setupClickHandlers(dependencyGraphContent, activeProject.id);
+            }
+            
+            // Setup mini dependency graph click handlers
+            const miniGraphContainer = document.querySelector(`.dependency-mini-graph[data-project-id="${activeProject.id}"]`);
+            if (miniGraphContainer && typeof window !== 'undefined' && window.DependencyGraph) {
+                const dependencyGraph = new window.DependencyGraph(this.stateManager, this.sectionManager);
+                dependencyGraph.setupClickHandlers(miniGraphContainer, activeProject.id);
             }
         }).catch(error => {
             if (this.errorHandler) {
@@ -1266,6 +1273,33 @@ class RenderingEngine {
                 </div>
             </div>
         `;
+    }
+    
+    _renderDependencyMiniGraph(project, section) {
+        if (!project || !section || typeof window === 'undefined' || !window.DependencyGraph) {
+            return '';
+        }
+        
+        try {
+            const dependencyGraph = new window.DependencyGraph(this.stateManager, this.sectionManager);
+            const miniGraphHtml = dependencyGraph.renderMiniGraph(project, section);
+            // Add data attribute for click handler setup
+            if (miniGraphHtml && miniGraphHtml.includes('dependency-mini-graph')) {
+                return miniGraphHtml.replace(
+                    '<div class="dependency-mini-graph">',
+                    `<div class="dependency-mini-graph" data-project-id="${project.id}">`
+                );
+            }
+            return miniGraphHtml;
+        } catch (error) {
+            if (this.errorHandler) {
+                this.errorHandler.logError(error, {
+                    source: 'RenderingEngine',
+                    operation: '_renderDependencyMiniGraph'
+                });
+            }
+            return '';
+        }
     }
     
     _renderSectionHeader(data, project, section) {
